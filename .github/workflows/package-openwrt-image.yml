@@ -13,7 +13,7 @@ on:
       openwrt_soc:
         description: "Select device board."
         required: false
-        default: "all"
+        default: "rk3399"
         type: choice
         options:
           - all
@@ -60,7 +60,7 @@ on:
       customize_rk3399:
         description: "Set customize rk3399 devices"
         required: false
-        default: "tvi3315a:rk3399-tvi3315a.dtb/sw799:rk3399-bozz-sw799.dtb"
+        default: "zcube1-max:zcube1-max.dts"
         type: choice
         options:
           - tvi3315a:rk3399-tvi3315a.dtb/sw799:rk3399-bozz-sw799.dtb

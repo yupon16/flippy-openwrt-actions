@@ -221,15 +221,17 @@ jobs:
           echo "status=success" >> ${GITHUB_OUTPUT}
       - name: Prepare Custom DTS for zcube1-max
         if: ${{ steps.download.outputs.status }} == 'success' && !cancelled()
-        run: | 
-          echo “准备自定义设备树文件...”
+        run: |
+          echo "准备自定义设备树文件..."
           # 1. 直接在打包脚本真正的工作根目录下创建 boot 文件夹
           sudo mkdir -p /opt/openwrt_packit/boot
           # 2. 将文件下载到这个绝对路径
           sudo curl -L -o /opt/openwrt_packit/boot/zcube1-max.dts \
             https://raw.githubusercontent.com/yupon16/flippy-openwrt-actions/main/boot/zcube1-max.dts
-          echo “文件已下载至：/opt/openwrt_packit/boot/zcube1-max.dts”
-          # 3. 验证文件是否存在
+          # 3. 修复目录权限，确保后续步骤能写入
+          sudo chown -R runner:runner /opt/openwrt_packit
+          echo "文件已下载至：/opt/openwrt_packit/boot/zcube1-max.dts"
+          echo "目录权限已修复，文件列表："
           sudo ls -la /opt/openwrt_packit/boot/
 
       - name: Package OpenWrt Firmware

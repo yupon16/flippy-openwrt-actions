@@ -260,6 +260,8 @@ jobs:
           EOF
           echo “make.env 内容如下：”
           sudo cat /opt/openwrt_packit/make.env
+          echo “检查输出目录：”
+          sudo ls -la /opt/openwrt_packit/output/
           
       - name: Package OpenWrt Firmware
         uses: ophub/flippy-openwrt-actions@main

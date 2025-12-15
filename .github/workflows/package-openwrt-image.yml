@@ -223,16 +223,29 @@ jobs:
         if: ${{ steps.download.outputs.status }} == 'success' && !cancelled()
         run: |
           echo "准备自定义设备树文件..."
-          # 1. 直接在打包脚本真正的工作根目录下创建 boot 文件夹
+          # 1. 创建目录并下载设备树文件
           sudo mkdir -p /opt/openwrt_packit/boot
-          # 2. 将文件下载到这个绝对路径
           sudo curl -L -o /opt/openwrt_packit/boot/zcube1-max.dts \
             https://raw.githubusercontent.com/yupon16/flippy-openwrt-actions/main/boot/zcube1-max.dts
-          # 3. 修复目录权限，确保后续步骤能写入
+          # 2. 修复目录权限
           sudo chown -R runner:runner /opt/openwrt_packit
           echo "文件已下载至：/opt/openwrt_packit/boot/zcube1-max.dts"
           echo "目录权限已修复，文件列表："
           sudo ls -la /opt/openwrt_packit/boot/
+
+          # 3. 【关键】创建 make.env 配置文件 (注意 heredoc 语法)
+          echo "创建缺失的 make.env 配置文件..."
+          sudo tee /opt/openwrt_packit/make.env << 'EOF'
+          WHOAMI=${{ inputs.builder_name }}
+          OPENWRT_VER=R25.11.25
+          SW_FLOWOFFLOAD=1
+          HW_FLOWOFFLOAD=0
+          SFE_FLOW=1
+          DISTRIB_REVISION=R$(date +%m.%d)
+          DISTRIB_DESCRIPTION=OpenWrt
+          EOF
+          echo "make.env 内容如下："
+          sudo cat /opt/openwrt_packit/make.env
 
       - name: Package OpenWrt Firmware
         uses: ophub/flippy-openwrt-actions@main

@@ -261,21 +261,44 @@ jobs:
           echo "make.env 内容如下："
           sudo cat /opt/openwrt_packit/make.env
           
-          # 5. 【核心调试】修改打包脚本，添加详细日志
-          echo "=== 开始注入调试信息到打包脚本 ==="
-          # 找到打包脚本
-          MK_SCRIPT="/opt/openwrt_packit/mk_rk3399_generic.sh"
-          if [ -f "$MK_SCRIPT" ]; then
-            echo "找到打包脚本: $MK_SCRIPT"
-            # 备份原脚本
-            sudo cp "$MK_SCRIPT" "${MK_SCRIPT}.backup"
-            # 在脚本开头附近，添加打印所有参数和环境的命令
-            sudo sed -i '2a\echo "[DEBUG] mk_rk3399_generic.sh 被调用，参数: \$@"\necho "[DEBUG] 当前目录: \$(pwd)"\necho "[DEBUG] 环境变量 CUSTOMIZE_RK3399: \$CUSTOMIZE_RK3399"\necho "[DEBUG] 开始处理..."' "$MK_SCRIPT"
-            # 在脚本可能处理自定义设备的地方之前也添加日志（这里是一个通用位置）
-            sudo sed -i '/for.*board.*fdtfile.*in.*\${CUSTOMIZE_RK3399}/i echo "[DEBUG] 准备进入自定义设备循环"' "$MK_SCRIPT"
-            echo "打包脚本已注入调试信息。"
+          # 5. 【终极调试】主动查找并测试打包脚本
+          echo "=== 终极调试：主动查找并测试打包脚本 ==="
+          # 等待并确认打包仓库已克隆（这通常发生在打包步骤初期）
+          echo "1. 检查 /opt/openwrt_packit 目录结构..."
+          sudo find /opt/openwrt_packit -type f -name "*.sh" 2>/dev/null | head -10
+          
+          # 重点查找 rk3399 打包脚本
+          MK_SCRIPT_PATH=$(sudo find /opt/openwrt_packit -type f -name "mk_rk3399*.sh" 2>/dev/null | head -1)
+          
+          if [ -n "$MK_SCRIPT_PATH" ] && [ -f "$MK_SCRIPT_PATH" ]; then
+            echo "2. 找到打包脚本: $MK_SCRIPT_PATH"
+            echo "3. 检查脚本权限并添加执行权限..."
+            sudo chmod +x "$MK_SCRIPT_PATH"
+            
+            echo "4. 模拟打包脚本被调用 (dry-run)..."
+            # 进入脚本所在目录，模拟其运行环境
+            SCRIPT_DIR=$(dirname "$MK_SCRIPT_PATH")
+            echo "   脚本目录: $SCRIPT_DIR"
+            echo "   当前环境变量 CUSTOMIZE_RK3399: zcube1-max:zcube1-max.dtb"
+            
+            # 关键：尝试手动调用脚本，并传入参数，观察其行为
+            # 首先，检查脚本是否需要特定参数格式
+            echo "5. 查看脚本头部，了解用法..."
+            sudo head -20 "$MK_SCRIPT_PATH"
+            
+            # 尝试一个最简单的调用，看它是否报错或输出
+            echo "6. 尝试执行脚本 (可能失败，但错误信息是关键)..."
+            cd "$SCRIPT_DIR"
+            # 设置脚本期望的环境变量
+            export CUSTOMIZE_RK3399="zcube1-max:zcube1-max.dtb"
+            # 尝试运行，但可能因缺少其他依赖而失败。我们捕捉错误。
+            sudo bash -x "$MK_SCRIPT_PATH" 2>&1 | head -50 || echo "脚本执行出错，这是预期内的，我们需要看错误信息。"
+            
           else
-            echo "警告：打包脚本不存在，可能在后续步骤中才会被克隆。"
+            echo "错误：在 /opt/openwrt_packit 目录中未找到 mk_rk3399*.sh 脚本。"
+            echo "打包脚本可能在后续步骤中才被下载。尝试列出临时目录..."
+            # 有时脚本会在临时目录中
+            sudo find /tmp -type f -name "mk_rk3399*.sh" 2>/dev/null | head -5
           fi
           
       - name: Package OpenWrt Firmware (with Debug)

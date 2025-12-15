@@ -61,10 +61,11 @@ on:
         description: "Set customize rk3399 devices"
         required: false
         default: "zcube1-max:zcube1-max.dts"
-        type: choice
-        options:
-          - tvi3315a:rk3399-tvi3315a.dtb/sw799:rk3399-bozz-sw799.dtb
-          - none
+        type: string
+        # 原配置已注释，便于恢复：
+        # options:
+        #   - tvi3315a:rk3399-tvi3315a.dtb/sw799:rk3399-bozz-sw799.dtb
+        #   - none
       openwrt_ip:
         description: "Set OpenWrt default IP address"
         required: false

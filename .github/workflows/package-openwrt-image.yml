@@ -219,6 +219,16 @@ jobs:
 
           echo "build_tag=OpenWrt_armv8_${{ inputs.openwrt_storage }}_$(date +"%Y.%m")" >> ${GITHUB_ENV}
           echo "status=success" >> ${GITHUB_OUTPUT}
+      - name: Prepare Custom DTS for zcube1-max
+        if: ${{ steps.download.outputs.status }} == 'success' && !cancelled()
+        run: |
+          echo "准备自定义设备树文件..."
+          cd ${{ github.workspace }}
+          mkdir -p openwrt_packit/boot
+          curl -L -o openwrt_packit/boot/zcube1-max.dts \
+            https://raw.githubusercontent.com/yupon16/flippy-openwrt-actions/main/boot/zcube1-max.dts
+          echo "文件已下载至：$(pwd)/openwrt_packit/boot/zcube1-max.dts"
+          ls -la openwrt_packit/boot/
 
       - name: Package OpenWrt Firmware
         uses: ophub/flippy-openwrt-actions@main

@@ -224,8 +224,8 @@ jobs:
         run: |
           echo "准备自定义设备树文件..."
           cd ${{ github.workspace }}
-          mkdir -p openwrt_packit/boot
-          curl -L -o openwrt_packit/boot/zcube1-max.dts \
+          sudo mkdir -p /opt/openwrt_packit/boot
+          sudo curl -L -o /opt/openwrt_packit/boot/zcube1-max.dts \
             https://raw.githubusercontent.com/yupon16/flippy-openwrt-actions/main/boot/zcube1-max.dts
           echo "文件已下载至：$(pwd)/openwrt_packit/boot/zcube1-max.dts"
           ls -la openwrt_packit/boot/

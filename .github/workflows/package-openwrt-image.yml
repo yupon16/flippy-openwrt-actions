@@ -291,7 +291,27 @@ jobs:
           CUSTOMIZE_RK3399: ${{ inputs.customize_rk3399 }}
           SCRIPT_DIY_PATH: ${{ inputs.script_diy_path }}
           WHOAMI: ${{ inputs.builder_name }}
-
+          
+            # 添加在 Package OpenWrt Firmware 步骤之后
+      - name: Check Build Output for zcube1-max
+        if: always() # 无论之前步骤成功与否都执行
+        run: |
+          echo "=== 检查打包输出 ==="
+          OUTPUT_DIR="/opt/openwrt_packit/output"
+          if [ -d "$OUTPUT_DIR" ]; then
+            echo "输出目录存在，内容如下："
+            ls -la "$OUTPUT_DIR/"
+            echo "--- 搜索 zcube1-max 固件 ---"
+            find "$OUTPUT_DIR" -type f -name "*zcube1-max*" 2>/dev/null || echo "未找到包含 'zcube1-max' 的文件。"
+            echo "--- 所有 .img 和 .gz 文件 ---"
+            find "$OUTPUT_DIR" -type f \( -name "*.img" -o -name "*.img.gz" \) 2>/dev/null || echo "未找到镜像文件。"
+          else
+            echo "警告：输出目录 $OUTPUT_DIR 不存在。"
+          fi
+          # 同时检查 boot 目录，确认文件未被意外移动
+          echo "=== 确认设备树文件 ==="
+          ls -la /opt/openwrt_packit/boot/zcube1-max.dt* 2>/dev/null || echo "设备树文件不存在。"
+          
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main
         if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()

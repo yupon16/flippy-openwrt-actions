@@ -13,7 +13,7 @@ on:
       openwrt_soc:
         description: "Select device board."
         required: false
-        default: "rk3399"
+        default: "all"
         type: choice
         options:
           - all
@@ -60,12 +60,11 @@ on:
       customize_rk3399:
         description: "Set customize rk3399 devices"
         required: false
-        default: "zcube1-max:zcube1-max.dts"
-        type: string
-        # 原配置已注释，便于恢复：
-        # options:
-        #   - tvi3315a:rk3399-tvi3315a.dtb/sw799:rk3399-bozz-sw799.dtb
-        #   - none
+        default: "tvi3315a:rk3399-tvi3315a.dtb/sw799:rk3399-bozz-sw799.dtb"
+        type: choice
+        options:
+          - tvi3315a:rk3399-tvi3315a.dtb/sw799:rk3399-bozz-sw799.dtb
+          - none
       openwrt_ip:
         description: "Set OpenWrt default IP address"
         required: false
@@ -81,7 +80,7 @@ on:
       openwrt_kernel:
         description: "Select kernel version"
         required: false
-        default: "6.1.y"
+        default: "6.1.y_6.12.y"
         type: choice
         options:
           - 5.10.y
@@ -99,10 +98,6 @@ on:
         required: false
         default: true
         type: boolean
-      openwrt_rootfs:
-        description: "Set OpenWrt rootfs tags keywords"
-        required: false
-        default: "OpenWrt_armv8_rootfs"
       script_diy_path:
         description: "Set custom script loading path"
         required: false
@@ -187,125 +182,52 @@ jobs:
         working-directory: /builder
         if: ${{ steps.init.outputs.status }} == 'success' && !cancelled()
         run: |
-          # Get the latest OpenWrt rootfs download URL
-          latest_version=$(curl -s \
-                -H "Accept: application/vnd.github+json" \
-                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-                https://api.github.com/repos/${{ github.repository }}/releases?per_page=20 | \
-                jq -r --arg RTK "${{ inputs.openwrt_rootfs }}" \
-                --arg BOARD "-rootfs.tar.gz" \
-                '[.[] | select(.tag_name | contains($RTK))] |
-                map(.assets[] | select(.browser_download_url | endswith($BOARD))) |
-                sort_by(.updated_at) |
-                reverse |
-                .[0] |
-                {data: .updated_at, url: .browser_download_url}')
-
-          [[ -z "${latest_version}" || "${latest_version}" == "null" ]] && echo "Invalid OpenWrt rootfs download address." && exit 1
-          latest_url="$(echo ${latest_version} | jq -r '.url')"
-          rootfsfile_name="${latest_url##*/}"
-          echo "Latest OpenWrt rootfs file: ${rootfsfile_name}"
-
-          # Download OpenWrt rootfs file
-          download_path="download"
-          [[ -d "${download_path}" ]] || mkdir -p ${download_path}
-          curl -fsSL "${latest_url}" -o "${download_path}/${rootfsfile_name}"
-          [[ "${?}" -ne "0" ]] && echo "Invalid OpenWrt rootfs download address." && exit 1
-
-          # Mount builder directory
-          mkdir -p opt
+          # Create download directory
+          armsr_tarfile_path="opt/download"
+          [[ -d "${armsr_tarfile_path}" ]] || mkdir -p ${armsr_tarfile_path}
+          ln -sf /builder/opt ${{ github.workspace }}/opt
           sudo rm -rf /opt && sudo ln -sf /builder/opt /opt
-          ln -sf /builder/${download_path} ${{ github.workspace }}/${download_path}
+
+          # Get name (file name) and url (API asset URL)
+          latest_version=$(curl -s \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              https://api.github.com/repos/ophub/flippy-openwrt-actions/releases?per_page=20 | \
+              jq -r --arg RTK "OpenWrt_armv8_rootfs" \
+              --arg BOARD "-rootfs.tar.gz" \
+              '[.[] | select(.tag_name | contains($RTK))] |
+              map(.assets[] | select(.name | endswith($BOARD))) |
+              sort_by(.updated_at) |
+              reverse |
+              .[0] |
+              {data: .updated_at, url: .url, name: .name}')
+
+          [[ -z "${latest_version}" || "${latest_version}" == "null" ]] && {
+              echo "Invalid OpenWrt rootfs download address."
+              exit 1
+          }
+
+          # Get URL and filename separately
+          latest_url="$(echo ${latest_version} | jq -r '.url')"
+          openwrt_filename="$(echo ${latest_version} | jq -r '.name')"
+
+          # Download using API method (add octet-stream header)
+          echo "Downloading: ${openwrt_filename}"
+          curl -fsSL \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/octet-stream" \
+              "${latest_url}" \
+              -o "${armsr_tarfile_path}/${openwrt_filename}"
+          [[ "${?}" -ne "0" ]] && echo "Download failed." && exit 1
 
           echo "build_tag=OpenWrt_armv8_${{ inputs.openwrt_storage }}_$(date +"%Y.%m")" >> ${GITHUB_ENV}
           echo "status=success" >> ${GITHUB_OUTPUT}
-      - name: Prepare Custom DTS for zcube1-max
-        if: ${{ steps.download.outputs.status }} == 'success' && !cancelled()
-        run: |
-          echo "准备自定义设备树文件..."
-          # 1. 创建目录并下载设备树源文件
-          sudo mkdir -p /opt/openwrt_packit/boot
-          sudo curl -L -o /opt/openwrt_packit/boot/zcube1-max.dts \
-            https://raw.githubusercontent.com/yupon16/flippy-openwrt-actions/main/boot/zcube1-max.dts
-          
-          # 2. 【核心新增】将设备树源文件 (.dts) 编译为二进制文件 (.dtb)
-          echo "编译 DTS 为 DTB..."
-          # 首先检查或安装 dtc 编译器
-          if ! command -v dtc &> /dev/null; then
-            echo "安装 device-tree-compiler..."
-            sudo apt-get update && sudo apt-get install -y device-tree-compiler
-          fi
-          # 执行编译
-          sudo dtc -I dts -O dtb -o /opt/openwrt_packit/boot/zcube1-max.dtb /opt/openwrt_packit/boot/zcube1-max.dts
-          echo "DTB 文件编译完成。"
-          ls -la /opt/openwrt_packit/boot/zcube1-max.dt*
-          
-          # 3. 修复目录权限
-          sudo chown -R runner:runner /opt/openwrt_packit
-          echo "文件已下载至：/opt/openwrt_packit/boot/zcube1-max.dts"
-          echo "文件已编译至：/opt/openwrt_packit/boot/zcube1-max.dtb"
-          echo "目录权限已修复，文件列表："
-          sudo ls -la /opt/openwrt_packit/boot/
 
-          # 4. 创建 make.env 配置文件
-          echo "创建缺失的 make.env 配置文件..."
-          sudo tee /opt/openwrt_packit/make.env << 'EOF'
-          WHOAMI=${{ inputs.builder_name }}
-          OPENWRT_VER=R25.11.25
-          SW_FLOWOFFLOAD=1
-          HW_FLOWOFFLOAD=0
-          SFE_FLOW=1
-          DISTRIB_REVISION=R$(date +%m.%d)
-          DISTRIB_DESCRIPTION=OpenWrt
-          EOF
-          echo "make.env 内容如下："
-          sudo cat /opt/openwrt_packit/make.env
-          
-          # 5. 【终极调试】主动查找并测试打包脚本
-          echo "=== 终极调试：主动查找并测试打包脚本 ==="
-          # 等待并确认打包仓库已克隆（这通常发生在打包步骤初期）
-          echo "1. 检查 /opt/openwrt_packit 目录结构..."
-          sudo find /opt/openwrt_packit -type f -name "*.sh" 2>/dev/null | head -10
-          
-          # 重点查找 rk3399 打包脚本
-          MK_SCRIPT_PATH=$(sudo find /opt/openwrt_packit -type f -name "mk_rk3399*.sh" 2>/dev/null | head -1)
-          
-          if [ -n "$MK_SCRIPT_PATH" ] && [ -f "$MK_SCRIPT_PATH" ]; then
-            echo "2. 找到打包脚本: $MK_SCRIPT_PATH"
-            echo "3. 检查脚本权限并添加执行权限..."
-            sudo chmod +x "$MK_SCRIPT_PATH"
-            
-            echo "4. 模拟打包脚本被调用 (dry-run)..."
-            # 进入脚本所在目录，模拟其运行环境
-            SCRIPT_DIR=$(dirname "$MK_SCRIPT_PATH")
-            echo "   脚本目录: $SCRIPT_DIR"
-            echo "   当前环境变量 CUSTOMIZE_RK3399: zcube1-max:zcube1-max.dtb"
-            
-            # 关键：尝试手动调用脚本，并传入参数，观察其行为
-            # 首先，检查脚本是否需要特定参数格式
-            echo "5. 查看脚本头部，了解用法..."
-            sudo head -20 "$MK_SCRIPT_PATH"
-            
-            # 尝试一个最简单的调用，看它是否报错或输出
-            echo "6. 尝试执行脚本 (可能失败，但错误信息是关键)..."
-            cd "$SCRIPT_DIR"
-            # 设置脚本期望的环境变量
-            export CUSTOMIZE_RK3399="zcube1-max:zcube1-max.dtb"
-            # 尝试运行，但可能因缺少其他依赖而失败。我们捕捉错误。
-            sudo bash -x "$MK_SCRIPT_PATH" 2>&1 | head -50 || echo "脚本执行出错，这是预期内的，我们需要看错误信息。"
-            
-          else
-            echo "错误：在 /opt/openwrt_packit 目录中未找到 mk_rk3399*.sh 脚本。"
-            echo "打包脚本可能在后续步骤中才被下载。尝试列出临时目录..."
-            # 有时脚本会在临时目录中
-            sudo find /tmp -type f -name "mk_rk3399*.sh" 2>/dev/null | head -5
-          fi
-          
-      - name: Package OpenWrt Firmware (with Debug)
+      - name: Package OpenWrt Firmware
         uses: ophub/flippy-openwrt-actions@main
         if: ${{ steps.download.outputs.status }} == 'success' && !cancelled()
         env:
-          OPENWRT_ARMSR: download/*rootfs.tar.gz
+          OPENWRT_ARMSR: opt/download/*rootfs.tar.gz
           PACKAGE_SOC: ${{ inputs.openwrt_soc }}
           KERNEL_REPO_URL: ${{ inputs.kernel_repo }}
           KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
@@ -314,31 +236,7 @@ jobs:
           CUSTOMIZE_RK3399: ${{ inputs.customize_rk3399 }}
           SCRIPT_DIY_PATH: ${{ inputs.script_diy_path }}
           WHOAMI: ${{ inputs.builder_name }}
-        # 关键：在Action运行的shell中注入调试命令
-        with:
-          shell: bash
-          run: |
-            echo "=== 进入打包步骤，开始内部调试 ==="
-            echo "1. 当前工作目录: $(pwd)"
-            echo "2. 环境变量 CUSTOMIZE_RK3399: $CUSTOMIZE_RK3399"
-            echo "3. 检查打包脚本是否存在:"
-            find . -name "mk_rk3399*.sh" -type f 2>/dev/null | head -5
-            SCRIPT_PATH="$(find . -name "mk_rk3399*.sh" -type f 2>/dev/null | head -1)"
-            if [ -f "$SCRIPT_PATH" ]; then
-              echo "  找到脚本: $SCRIPT_PATH"
-              echo "  脚本头部内容:"
-              head -30 "$SCRIPT_PATH"
-              echo "--- 搜索CUSTOMIZE_RK3399处理逻辑 ---"
-              grep -n "CUSTOMIZE_RK3399" "$SCRIPT_PATH" || echo "  未找到相关处理逻辑。"
-            else
-              echo "  警告：未找到打包脚本。"
-            fi
-            echo "4. 列出当前目录:"
-            ls -la
-            echo "=== 内部调试结束，开始执行原打包流程 ==="
-            # 此处的 $* 会将所有参数传递给Action的原始入口脚本
-            exec "$@"
-          
+
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main
         if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()

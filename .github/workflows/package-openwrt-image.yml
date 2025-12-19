@@ -243,10 +243,10 @@ jobs:
           SCRIPT_DIY_PATH: ${{ inputs.script_diy_path }}
           WHOAMI: ${{ inputs.builder_name }}
 
-       - name: Verify firmware output
-         run: |
-           echo "==> List output directory"
-           ls -lh output || true
+      - name: Verify firmware output
+        run: |
+         echo "==> List output directory"
+         ls -lh output || true
         
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main

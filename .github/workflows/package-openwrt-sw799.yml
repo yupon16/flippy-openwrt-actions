@@ -54,15 +54,28 @@ jobs:
           sudo ln -sf /builder/opt /opt
 
           latest=$(curl -s https://api.github.com/repos/ophub/flippy-openwrt-actions/releases \
-            | jq -r '[.[] | select(.tag_name|contains("OpenWrt_armv8_rootfs"))][0].assets[]
-              | select(.name|endswith("rootfs.tar.gz")).url')
+            | jq -r '
+              [.[] 
+                | select(.tag_name | contains("OpenWrt_armv8_rootfs"))
+                | .assets[]
+                | select(.name | endswith("rootfs.tar.gz"))
+                | .url
+              ][0]
+            ')
 
-          curl -L \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "$latest" -o opt/download/openwrt-rootfs.tar.gz
+            if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+              echo "ERROR: Failed to get OpenWrt rootfs download URL"
+              exit 1
+            fi
 
-          echo "build_tag=OpenWrt_SW799_$(date +%Y%m%d)" >> $GITHUB_ENV
+            curl -L \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/octet-stream" \
+              "$latest" \
+              -o opt/download/openwrt-rootfs.tar.gz
+
+            echo "build_tag=OpenWrt_SW799_$(date +%Y%m%d)" >> $GITHUB_ENV
+
 
       # ======== 关键步骤 1：验证 DTB 文件存在 ========
       - name: Verify SW799 DTB

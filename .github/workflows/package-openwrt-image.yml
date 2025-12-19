@@ -223,6 +223,12 @@ jobs:
           echo "build_tag=OpenWrt_armv8_${{ inputs.openwrt_storage }}_$(date +"%Y.%m")" >> ${GITHUB_ENV}
           echo "status=success" >> ${GITHUB_OUTPUT}
 
+      - name: Inject custom DTB (rk3399)
+        run: |
+          echo "==> Injecting custom DTB"
+          mkdir -p files/boot/dtb
+          ls -lh files/boot/dtb
+
       - name: Package OpenWrt Firmware
         uses: ophub/flippy-openwrt-actions@main
         if: ${{ steps.download.outputs.status }} == 'success' && !cancelled()
@@ -237,6 +243,11 @@ jobs:
           SCRIPT_DIY_PATH: ${{ inputs.script_diy_path }}
           WHOAMI: ${{ inputs.builder_name }}
 
+       - name: Verify firmware output
+         run: |
+           echo "==> List output directory"
+           ls -lh output || true
+        
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main
         if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()

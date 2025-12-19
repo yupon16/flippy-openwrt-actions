@@ -2,6 +2,7 @@
 # Description: Package OpenWrt image (RK3399 SW799 ONLY)
 # Board: RK3399 Bozz SW799
 # DTB: rk3399-bozz-sw799.dtb
+# 2025/12/19：ChaGPT创建rk3399-sw799专用！
 #==========================================================================
 
 name: Package OpenWrt image (SW799)

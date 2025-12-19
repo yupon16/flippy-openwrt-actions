@@ -1,1 +1,97 @@
+#==========================================================================
+# Description: Package OpenWrt image (RK3399 SW799 ONLY)
+# Board: RK3399 Bozz SW799
+# DTB: rk3399-bozz-sw799.dtb
+#==========================================================================
+
+name: Package OpenWrt image (SW799)
+
+on:
+  workflow_dispatch:
+
+env:
+  TZ: Etc/UTC
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          docker rmi -f $(docker images -q) 2>/dev/null || true
+          sudo swapoff -a
+          sudo rm -rf /swapfile /mnt/swapfile
+          sudo -E apt-get -y update
+          sudo -E apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-make-openwrt-depends)
+          sudo -E timedatectl set-timezone "${TZ}"
+          date -u
+
+      - name: Create simulated physical disk
+        run: |
+          sudo truncate -s 20G /mnt/mnt.img
+          sudo losetup /dev/loop6 /mnt/mnt.img
+          sudo pvcreate /dev/loop6
+          sudo vgcreate github /dev/loop6
+          sudo lvcreate -n runner -l 100%FREE github
+          sudo mkfs.xfs -f /dev/github/runner
+          sudo mkdir -p /builder
+          sudo mount /dev/github/runner /builder
+          sudo chown -R runner:runner /builder
+          df -Th
+
+      - name: Download OpenWrt rootfs
+        working-directory: /builder
+        run: |
+          mkdir -p opt/download
+          ln -sf /builder/opt $GITHUB_WORKSPACE/opt
+          sudo ln -sf /builder/opt /opt
+
+          latest=$(curl -s https://api.github.com/repos/ophub/flippy-openwrt-actions/releases \
+            | jq -r '[.[] | select(.tag_name|contains("OpenWrt_armv8_rootfs"))][0].assets[]
+              | select(.name|endswith("rootfs.tar.gz")).url')
+
+          curl -L \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            "$latest" -o opt/download/openwrt-rootfs.tar.gz
+
+          echo "build_tag=OpenWrt_SW799_$(date +%Y%m%d)" >> $GITHUB_ENV
+
+      # ======== 关键步骤 1：验证 DTB 文件存在 ========
+      - name: Verify SW799 DTB
+        run: |
+          ls -lh files/boot/dtb/rockchip/rk3399-bozz-sw799.dtb
+
+      # ======== 关键步骤 2：强制写死 fdtfile ========
+      - name: Force correct fdtfile
+        run: |
+          echo "fdtfile=rockchip/rk3399-bozz-sw799.dtb" >> files/boot/armbianEnv.txt
+          cat files/boot/armbianEnv.txt
+
+      - name: Package OpenWrt Firmware (SW799)
+        uses: ophub/flippy-openwrt-actions@main
+        env:
+          OPENWRT_ARMSR: opt/download/openwrt-rootfs.tar.gz
+          PACKAGE_SOC: rk3399
+          KERNEL_REPO_URL: ophub/kernel
+          KERNEL_VERSION_NAME: 6.1.y_6.12.y
+          KERNEL_AUTO_LATEST: true
+          OPENWRT_IP: 192.168.1.1
+          CUSTOMIZE_RK3399: sw799:rk3399-bozz-sw799.dtb
+          WHOAMI: sw799
+
+      - name: Upload firmware
+        uses: ncipollo/release-action@main
+        if: ${{ env.PACKAGED_STATUS }} == 'success'
+        with:
+          tag: ${{ env.build_tag }}
+          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 

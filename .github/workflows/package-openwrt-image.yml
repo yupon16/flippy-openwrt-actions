@@ -48,20 +48,21 @@ jobs:
         run: |
           set -e
           mkdir -p opt/download
+
           ROOTFS_REPO="ophub/flippy-openwrt-actions"
           ROOTFS_TAG="OpenWrt_armv8_rootfs"
           ROOTFS_SUFFIX="-rootfs.tar.gz"
-          
+
           echo "Querying rootfs release info..."
 
           release_json=$(curl -s \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20)
-  
+
           asset_info=$(echo "${release_json}" | jq -r \
             --arg TAG "${ROOTFS_TAG}" \
             --arg SUF "${ROOTFS_SUFFIX}" \
-            '[.[] | select(.tag_name | contains($TAG))] |
+           '[.[] | select(.tag_name | contains($TAG))] |
             map(.assets[] | select(.name | endswith($SUF))) |
             sort_by(.updated_at) |
             reverse |
@@ -85,10 +86,17 @@ jobs:
           ls -lh opt/download/openwrt-rootfs.tar.gz
           file opt/download/openwrt-rootfs.tar.gz
 
-          echo "OPENWRT_ARMSR=opt/download/openwrt-rootfs.tar.gz" >> $GITHUB_ENV
+          - name: Build OpenWrt DIY image
+            uses: ophub/flippy-openwrt-actions@main
+            env:
+             # ===== flippy 必须从这里拿变量 =====
+              PACKAGE_SOC: diy
+              SCRIPT_DIY: mk_sw799.sh
+              SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
 
-      - name: Build OpenWrt DIY image
-        uses: ophub/flippy-openwrt-actions@main
-        with:
-          mode: flippy
-
+              OPENWRT_ARMSR: opt/download/openwrt-rootfs.tar.gz
+              KERNEL_VER: 6.6.68
+              ENABLE_WIFI: false
+              UPLOAD_RELEASE: true
+            with:
+              mode: flippy

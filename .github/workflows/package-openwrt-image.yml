@@ -40,61 +40,61 @@ jobs:
       ENABLE_WIFI: false
       UPLOAD_RELEASE: true
 
-  steps:
-  - name: Checkout repository
-    uses: actions/checkout@v3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-  - name: Download OpenWrt rootfs (stable API method)
-    run: |
-      set -e
-      mkdir -p opt/download
+      - name: Download OpenWrt rootfs (stable API method)
+        run: |
+          set -e
+          mkdir -p opt/download
 
-      ROOTFS_REPO="ophub/flippy-openwrt-actions"
-      ROOTFS_TAG="OpenWrt_armv8_rootfs"
-      ROOTFS_SUFFIX="-rootfs.tar.gz"
+          ROOTFS_REPO="ophub/flippy-openwrt-actions"
+          ROOTFS_TAG="OpenWrt_armv8_rootfs"
+          ROOTFS_SUFFIX="-rootfs.tar.gz"
 
-       echo "Querying rootfs release info..."
+          echo "Querying rootfs release info..."
 
-       release_json=$(curl -s \
-         -H "Accept: application/vnd.github+json" \
-         https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20)
+          release_json=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20)
 
-       asset_info=$(echo "${release_json}" | jq -r \
-         --arg TAG "${ROOTFS_TAG}" \
-         --arg SUF "${ROOTFS_SUFFIX}" \
-        '[.[] | select(.tag_name | contains($TAG))] |
-         map(.assets[] | select(.name | endswith($SUF))) |
-         sort_by(.updated_at) |
-         reverse |
-         .[0]')
+          asset_info=$(echo "${release_json}" | jq -r \
+            --arg TAG "${ROOTFS_TAG}" \
+            --arg SUF "${ROOTFS_SUFFIX}" \
+           '[.[] | select(.tag_name | contains($TAG))] |
+            map(.assets[] | select(.name | endswith($SUF))) |
+            sort_by(.updated_at) |
+            reverse |
+            .[0]')
 
-       [[ -z "${asset_info}" || "${asset_info}" == "null" ]] && {
-         echo "ERROR: No valid rootfs asset found."
-         exit 1
-       }
+          [[ -z "${asset_info}" || "${asset_info}" == "null" ]] && {
+            echo "ERROR: No valid rootfs asset found."
+            exit 1
+          }
 
-       asset_url=$(echo "${asset_info}" | jq -r '.url')
-       asset_name=$(echo "${asset_info}" | jq -r '.name')
+          asset_url=$(echo "${asset_info}" | jq -r '.url')
+          asset_name=$(echo "${asset_info}" | jq -r '.name')
 
-       echo "Downloading rootfs: ${asset_name}"
+          echo "Downloading rootfs: ${asset_name}"
 
-       curl -fSL \
-         -H "Accept: application/octet-stream" \
-         "${asset_url}" \
-         -o opt/download/openwrt-rootfs.tar.gz
+          curl -fSL \
+            -H "Accept: application/octet-stream" \
+            "${asset_url}" \
+            -o opt/download/openwrt-rootfs.tar.gz
 
-       ls -lh opt/download/openwrt-rootfs.tar.gz
-       file opt/download/openwrt-rootfs.tar.gz
+          ls -lh opt/download/openwrt-rootfs.tar.gz
+          file opt/download/openwrt-rootfs.tar.gz
 
-  - name: Build OpenWrt DIY image
-    uses: ophub/flippy-openwrt-actions@main
-    env:
-       # ===== flippy 必须从这里拿变量 =====
-        PACKAGE_SOC: diy
-        SCRIPT_DIY: mk_sw799.sh
-        SCRIPT_DIY_PATH: ${{ github.workspace }}/diy/sw799/mk_sw799.sh
-        OPENWRT_ARMSR: ${{ github.workspace }}/opt/download/openwrt-rootfs.tar.gz
-        ENABLE_WIFI: false
-        UPLOAD_RELEASE: true
-    with:
-      mode:
+      - name: Build OpenWrt DIY image
+        uses: ophub/flippy-openwrt-actions@main
+        env:
+           # ===== flippy 必须从这里拿变量 =====
+           PACKAGE_SOC: diy
+           SCRIPT_DIY: mk_sw799.sh
+           SCRIPT_DIY_PATH: ${{ github.workspace }}/diy/sw799/mk_sw799.sh
+           OPENWRT_ARMSR: ${{ github.workspace }}/opt/download/openwrt-rootfs.tar.gz
+           ENABLE_WIFI: false
+           UPLOAD_RELEASE: true
+        with:
+          mode: default

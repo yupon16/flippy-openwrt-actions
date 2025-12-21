@@ -5,6 +5,10 @@
 
 set -e
 
+# ✅ 关键：加载 packit 函数库（必须放在最前面！）
+
+source ./public_funcs
+
 echo "[INFO] Enter SW799 DIY script"
 
 #--------------------------------------------------

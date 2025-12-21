@@ -33,7 +33,7 @@ jobs:
       # ===== 核心三行（必须修正）=====
       PACKAGE_SOC: diy
       SCRIPT_DIY: mk_sw799.sh
-      SCRIPT_DIY_PATH: ${{ github.workspace }}/diy/sw799/mk_sw799.sh
+      SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
       # ✅ 修正1: OPENWRT_ARMSR 绝对路径
       OPENWRT_ARMSR: ${{ github.workspace }}/opt/download/openwrt-rootfs.tar.gz
       # ✅ 修正2: 删除冗余变量（否则导致冲突）
@@ -92,7 +92,7 @@ jobs:
            # ===== flippy 必须从这里拿变量 =====
            PACKAGE_SOC: diy
            SCRIPT_DIY: mk_sw799.sh
-           SCRIPT_DIY_PATH: ${{ github.workspace }}/diy/sw799/mk_sw799.sh
+           SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
            OPENWRT_ARMSR: ${{ github.workspace }}/opt/download/openwrt-rootfs.tar.gz
            ENABLE_WIFI: false
            UPLOAD_RELEASE: true

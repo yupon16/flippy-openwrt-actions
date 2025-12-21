@@ -49,30 +49,30 @@ jobs:
         working-directory: /builder
         run: |
           set -e
+
           mkdir -p opt/download
           ln -sf /builder/opt $GITHUB_WORKSPACE/opt
           sudo ln -sf /builder/opt /opt
 
           echo "Downloading OpenWrt armv8 rootfs..."
-          release_json=$(curl -s https://api.github.com/repos/ophub/flippy-openwrt-actions/releases)
+
+          release_json=$(curl -fsSL https://api.github.com/repos/ophub/flippy-openwrt-actions/releases)
+
           rootfs_url=$(echo "$release_json" | jq -r '
             [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
+            | sort_by(.published_at)
+            | reverse
             | .[0].assets[]
             | select(.name | endswith("-rootfs.tar.gz"))
-            | .url
-          ')
-          rootfs_name=$(echo "$release_json" | jq -r '
-            [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
-            | .[0].assets[]
-            | select(.name | endswith("-rootfs.tar.gz"))
-            | .name
+            | .browser_download_url
           ')
 
-          curl -L \
-            -H "Accept: application/octet-stream" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "$rootfs_url" \
-            -o opt/download/$rootfs_name
+          rootfs_name=$(basename "$rootfs_url")
+
+          echo "Rootfs URL: $rootfs_url"
+          echo "Rootfs Name: $rootfs_name"
+
+          curl -fL "$rootfs_url" -o "opt/download/$rootfs_name"
 
           ls -lh opt/download
 

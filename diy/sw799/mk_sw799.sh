@@ -5,14 +5,17 @@
 
 set -e
 
-# ✅ 强制进入脚本所在目录（避免路径问题）
-cd "$(dirname "$0")"
+# ✅ 强制使用绝对路径（避免任何路径歧义）
+SCRIPT_DIR="/opt/openwrt_packit"
+cd "$SCRIPT_DIR"
 
-# ✅ 安全加载函数库（带错误检查）
+# ✅ 确保 public_funcs 可读
 if [[ ! -f "public_funcs" ]]; then
-    echo "[ERROR] public_funcs not found in $(pwd)"
+    echo "[ERROR] public_funcs not found in $SCRIPT_DIR"
     exit 1
 fi
+
+# ✅ 安全加载函数库
 source ./public_funcs
 
 echo "[INFO] Enter SW799 DIY script"
@@ -23,6 +26,6 @@ echo "[INFO] Enter SW799 DIY script"
 CUSTOMIZE_RK3399="sw799:rk3399-bozz-sw799.dtb"
 
 #--------------------------------------------------
-# 执行打包（现在 packit_build 已定义）
+# 执行打包
 #--------------------------------------------------
 packit_build

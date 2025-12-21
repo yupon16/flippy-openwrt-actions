@@ -30,71 +30,71 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # ===== 核心三行（决定一切）=====
+      # ===== 核心三行（必须修正）=====
       PACKAGE_SOC: diy
       SCRIPT_DIY: mk_sw799.sh
-      SCRIPT_DIY_PATH: ${{ github.workspace }}/diy/sw799/mk_sw799.sh 
-      
+      SCRIPT_DIY_PATH: ${{ github.workspace }}/diy/sw799/mk_sw799.sh
+      # ✅ 修正1: OPENWRT_ARMSR 绝对路径
+      OPENWRT_ARMSR: ${{ github.workspace }}/opt/download/openwrt-rootfs.tar.gz
+      # ✅ 修正2: 删除冗余变量（否则导致冲突）
       ENABLE_WIFI: false
       UPLOAD_RELEASE: true
-      
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
-      - name: Download OpenWrt rootfs (stable API method)
-        run: |
-          set -e
-          mkdir -p opt/download
+  steps:
+  - name: Checkout repository
+    uses: actions/checkout@v3
 
-          ROOTFS_REPO="ophub/flippy-openwrt-actions"
-          ROOTFS_TAG="OpenWrt_armv8_rootfs"
-          ROOTFS_SUFFIX="-rootfs.tar.gz"
+  - name: Download OpenWrt rootfs (stable API method)
+    run: |
+      set -e
+      mkdir -p opt/download
 
-          echo "Querying rootfs release info..."
+      ROOTFS_REPO="ophub/flippy-openwrt-actions"
+      ROOTFS_TAG="OpenWrt_armv8_rootfs"
+      ROOTFS_SUFFIX="-rootfs.tar.gz"
 
-          release_json=$(curl -s \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20)
+       echo "Querying rootfs release info..."
 
-          asset_info=$(echo "${release_json}" | jq -r \
-            --arg TAG "${ROOTFS_TAG}" \
-            --arg SUF "${ROOTFS_SUFFIX}" \
-           '[.[] | select(.tag_name | contains($TAG))] |
-            map(.assets[] | select(.name | endswith($SUF))) |
-            sort_by(.updated_at) |
-            reverse |
-            .[0]')
+       release_json=$(curl -s \
+         -H "Accept: application/vnd.github+json" \
+         https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20)
 
-          [[ -z "${asset_info}" || "${asset_info}" == "null" ]] && {
-            echo "ERROR: No valid rootfs asset found."
-            exit 1
-          }
+       asset_info=$(echo "${release_json}" | jq -r \
+         --arg TAG "${ROOTFS_TAG}" \
+         --arg SUF "${ROOTFS_SUFFIX}" \
+        '[.[] | select(.tag_name | contains($TAG))] |
+         map(.assets[] | select(.name | endswith($SUF))) |
+         sort_by(.updated_at) |
+         reverse |
+         .[0]')
 
-          asset_url=$(echo "${asset_info}" | jq -r '.url')
-          asset_name=$(echo "${asset_info}" | jq -r '.name')
+       [[ -z "${asset_info}" || "${asset_info}" == "null" ]] && {
+         echo "ERROR: No valid rootfs asset found."
+         exit 1
+       }
 
-          echo "Downloading rootfs: ${asset_name}"
+       asset_url=$(echo "${asset_info}" | jq -r '.url')
+       asset_name=$(echo "${asset_info}" | jq -r '.name')
 
-          curl -fSL \
-            -H "Accept: application/octet-stream" \
-            "${asset_url}" \
-            -o opt/download/openwrt-rootfs.tar.gz
+       echo "Downloading rootfs: ${asset_name}"
 
-          ls -lh opt/download/openwrt-rootfs.tar.gz
-          file opt/download/openwrt-rootfs.tar.gz
+       curl -fSL \
+         -H "Accept: application/octet-stream" \
+         "${asset_url}" \
+         -o opt/download/openwrt-rootfs.tar.gz
 
-      - name: Build OpenWrt DIY image
-        uses: ophub/flippy-openwrt-actions@main
-        env:
-           # ===== flippy 必须从这里拿变量 =====
-           PACKAGE_SOC: diy
-           SCRIPT_DIY: mk_sw799.sh
-           SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
+       ls -lh opt/download/openwrt-rootfs.tar.gz
+       file opt/download/openwrt-rootfs.tar.gz
 
-           OPENWRT_ARMSR: opt/download/openwrt-rootfs.tar.gz
-           KERNEL_VER: 6.6.68
-           ENABLE_WIFI: false
-           UPLOAD_RELEASE: true
-        with:
-           mode: flippy
+  - name: Build OpenWrt DIY image
+    uses: ophub/flippy-openwrt-actions@main
+    env:
+       # ===== flippy 必须从这里拿变量 =====
+        PACKAGE_SOC: diy
+        SCRIPT_DIY: mk_sw799.sh
+        SCRIPT_DIY_PATH: ${{ github.workspace }}/diy/sw799/mk_sw799.sh
+        OPENWRT_ARMSR: ${{ github.workspace }}/opt/download/openwrt-rootfs.tar.gz
+        ENABLE_WIFI: false
+        UPLOAD_RELEASE: true
+    with:
+      mode:

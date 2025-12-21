@@ -44,11 +44,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Download OpenWrt armvirt rootfs
+      - name: Download OpenWrt rootfs (stable API method)
         run: |
+          set -e
           mkdir -p opt/download
-          curl -fL \
-            https://github.com/ophub/flippy-openwrt-actions/releases/latest/download/openwrt-armvirt-64-default-rootfs.tar.gz \
+          ROOTFS_REPO="ophub/flippy-openwrt-actions"
+          ROOTFS_TAG="OpenWrt_armv8_rootfs"
+          ROOTFS_SUFFIX="-rootfs.tar.gz"
+          
+          echo "Querying rootfs release info..."
+
+          release_json=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20)
+  
+          asset_info=$(echo "${release_json}" | jq -r \
+            --arg TAG "${ROOTFS_TAG}" \
+            --arg SUF "${ROOTFS_SUFFIX}" \
+            '[.[] | select(.tag_name | contains($TAG))] |
+            map(.assets[] | select(.name | endswith($SUF))) |
+            sort_by(.updated_at) |
+            reverse |
+            .[0]')
+
+          [[ -z "${asset_info}" || "${asset_info}" == "null" ]] && {
+            echo "ERROR: No valid rootfs asset found."
+            exit 1
+          }
+
+          asset_url=$(echo "${asset_info}" | jq -r '.url')
+          asset_name=$(echo "${asset_info}" | jq -r '.name')
+
+          echo "Downloading rootfs: ${asset_name}"
+
+          curl -fSL \
+            -H "Accept: application/octet-stream" \
+            "${asset_url}" \
             -o opt/download/openwrt-rootfs.tar.gz
 
           ls -lh opt/download/openwrt-rootfs.tar.gz

@@ -20,16 +20,6 @@ SOC="rk3399"
 BOARD="sw799"
 
 #--------------------------------------------------
-# Rootfs（由 workflow 提供）
-#--------------------------------------------------
-if [[ -z "${OPENWRT_ARMSR}" ]]; then
-    echo "[ERROR] OPENWRT_ARMSR not set"
-    exit 1
-fi
-
-echo "[INFO] Using rootfs: ${OPENWRT_ARMSR}"
-
-#--------------------------------------------------
 # 关键：交还给 flippy / packit
 #--------------------------------------------------
 packit_build

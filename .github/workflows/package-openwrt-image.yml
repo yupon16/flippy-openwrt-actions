@@ -1,38 +1,27 @@
-name: Build OpenWrt for SW799
+name: Build OpenWrt SW799 Image
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 关键步骤 1：在 GITHUB_WORKSPACE 根目录下载 rootfs
-      - name: Download OpenWrt armsr rootfs
-        run: |
-          curl -L \
-            https://github.com/ophub/flippy-openwrt-actions/releases/latest/download/openwrt-armsr-armv8-generic-rootfs.tar.gz \
-            -o openwrt-armsr-armv8-generic-rootfs.tar.gz
-
-          ls -lh openwrt-armsr-armv8-generic-rootfs.tar.gz
-
-      # 关键步骤 2：调用 flippy-openwrt-actions
-      - name: Build with flippy-openwrt-actions
+      - name: Build OpenWrt image (SW799)
         uses: ophub/flippy-openwrt-actions@main
         with:
           mode: flippy
         env:
+          # ===== 必须三行 =====
           PACKAGE_SOC: diy
           SCRIPT_DIY: mk_sw799.sh
           SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
 
-          # 关键变量：相对 GITHUB_WORKSPACE 的真实路径
-          OPENWRT_ARMSR: openwrt-armsr-armv8-generic-rootfs.tar.gz
-
+          # ===== 核心参数 =====
+          KERNEL_VER: 6.6.68
           ENABLE_WIFI: false
           UPLOAD_RELEASE: true
-          KERNEL_VER: 6.6.68

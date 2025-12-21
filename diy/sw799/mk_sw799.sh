@@ -1,105 +1,97 @@
-#!/bin/bash
-# ==========================================================
-# DIY build script for rk3399 sw799 (eMMC)
-# Board: bozz sw799
-# DTB: rk3399-bozz-sw799.dtb
-# Strategy: DTB convergence, no u-boot modification
-# ==========================================================
+#!/usr/bin/env bash
+#========================================================
+# mk_sw799.sh - DIY packaging script for SW799
+#========================================================
 
-set -e
+set -euo pipefail
 
-echo "================================================="
-echo " DIY build: rk3399 sw799"
-echo "================================================="
+#----------------------------------------
+# Variables from workflow environment
+#----------------------------------------
+OPENWRT_ROOTFS="${OPENWRT_ARMSR:-}"
+KERNEL_VERSION="${KERNEL_VER:-6.6.68}"
+ENABLE_WIFI="${ENABLE_WIFI:-false}"
 
-# --------------------------------------------------
-# 基本变量（只定义一次）
-# --------------------------------------------------
-BOARD_NAME="sw799"
-SOC_FAMILY="rk3399"
-DTB_FILE="rk3399-bozz-sw799.dtb"
+# Optional RK3399 DTB customization
+RK3399_BOARD="${CUSTOMIZE_RK3399%%:*}"
+RK3399_DTB="${CUSTOMIZE_RK3399##*:}"
 
-VMLINUX_IMAGE="Image"
-BOOT_DIR="${WORK_DIR}/boot"
-DTB_SRC_DIR="${GITHUB_WORKSPACE}/files/boot/dtb"
-DTB_DST_DIR="${BOOT_DIR}/dtb"
+# Output directories
+WORKDIR="/opt/openwrt_packit"
+OUTPUTDIR="${WORKDIR}/output"
 
-# --------------------------------------------------
-# 关键校验 1：DTB 是否存在
-# --------------------------------------------------
-if [ ! -f "${DTB_SRC_DIR}/${DTB_FILE}" ]; then
-  echo "[FATAL] DTB not found: ${DTB_SRC_DIR}/${DTB_FILE}"
-  exit 1
-fi
-
-# --------------------------------------------------
-# 创建基础目录
-# --------------------------------------------------
-mkdir -p "${BOOT_DIR}"
-mkdir -p "${DTB_DST_DIR}"
-
-# --------------------------------------------------
-# 拷贝内核
-# flippy 已提前准备好内核 Image
-# --------------------------------------------------
-if [ ! -f "${VMLINUX_IMAGE}" ]; then
-  echo "[INFO] Kernel Image not found in current dir, try /opt/kernel"
-  cp -v /opt/kernel/${VMLINUX_IMAGE} "${BOOT_DIR}/" || {
-    echo "[FATAL] Kernel Image not found"
+#----------------------------------------
+# Functions
+#----------------------------------------
+error() {
+    echo "[ERROR] $1"
     exit 1
-  }
-else
-  cp -v "${VMLINUX_IMAGE}" "${BOOT_DIR}/"
-fi
+}
 
-# --------------------------------------------------
-# 拷贝 DTB（唯一 DTB）
-# --------------------------------------------------
-echo "[INFO] Installing DTB: ${DTB_FILE}"
-cp -v "${DTB_SRC_DIR}/${DTB_FILE}" "${DTB_DST_DIR}/"
+info() {
+    echo "[INFO] $1"
+}
 
-# --------------------------------------------------
-# 关键动作：收敛 DTB 选择
-# --------------------------------------------------
-cd "${BOOT_DIR}"
+download_kernel() {
+    local kernel_tag="$1"
+    local kernel_ver="$2"
+    local dest_dir="$3"
 
-# 清理任何历史 dtb 链接（防止 flippy 残留）
-rm -f dtb.img dtb/*.dtb 2>/dev/null || true
+    mkdir -p "$dest_dir"
+    local kernel_tar="${dest_dir}/boot-${kernel_ver}.tar.gz"
+    if [[ ! -f "$kernel_tar" ]]; then
+        info "Downloading kernel ${kernel_ver}..."
+        curl -L -o "$kernel_tar" \
+          "https://github.com/breakingbadboy/OpenWrt/releases/download/kernel_${kernel_tag}/boot-${kernel_ver}.tar.gz"
+    fi
+    tar -xf "$kernel_tar" -C "$dest_dir"
+}
 
-# 只保留 sw799 DTB
-cp -v "${DTB_DST_DIR}/${DTB_FILE}" "./dtb.img"
+prepare_rootfs() {
+    if [[ -z "$OPENWRT_ROOTFS" || ! -f "$OPENWRT_ROOTFS" ]]; then
+        error "OPENWRT_ARMSR not set or file missing"
+    fi
+    info "Using rootfs: $OPENWRT_ROOTFS"
+    mkdir -p "$WORKDIR/rootfs"
+    tar -xzf "$OPENWRT_ROOTFS" -C "$WORKDIR/rootfs"
+}
 
-# --------------------------------------------------
-# 写入 flippy 识别用的 board 信息
-# --------------------------------------------------
-cat > board.txt <<EOF
-BOARD=${BOARD_NAME}
-SOC=${SOC_FAMILY}
-DTB=${DTB_FILE}
-EOF
+build_openwrt_image() {
+    mkdir -p "$OUTPUTDIR"
+    cd "$WORKDIR/rootfs"
 
-# --------------------------------------------------
-# 网络默认配置（可选，但建议明确）
-# --------------------------------------------------
-mkdir -p "${WORK_DIR}/etc/config"
+    # Customize default IP
+    sed -i "s/\${ipaddr:-\"192.168.1.1\"}/\${ipaddr:-\"192.168.1.1\"}/" bin/config_generate
 
-cat > "${WORK_DIR}/etc/config/network" <<'EOF'
-config interface 'loopback'
-        option device 'lo'
-        option proto 'static'
-        option ipaddr '127.0.0.1'
-        option netmask '255.0.0.0'
+    # Copy kernel
+    KERNEL_DIR="$WORKDIR/kernel"
+    mkdir -p "$KERNEL_DIR"
+    download_kernel "stable" "$KERNEL_VERSION" "$KERNEL_DIR"
+    cp -r "$KERNEL_DIR"/* "$WORKDIR/rootfs/boot/"
 
-config interface 'lan'
-        option device 'eth0'
-        option proto 'static'
-        option ipaddr '192.168.1.1'
-        option netmask '255.255.255.0'
-EOF
+    # Apply RK3399 DTB if provided
+    if [[ -n "$RK3399_BOARD" && -n "$RK3399_DTB" ]]; then
+        info "Applying custom DTB for ${RK3399_BOARD}: ${RK3399_DTB}"
+        cp "$WORKDIR/kernel/${RK3399_DTB}" "$WORKDIR/rootfs/boot/$(basename $RK3399_DTB)"
+    fi
 
-# --------------------------------------------------
-# 标记完成
-# --------------------------------------------------
-echo "[SUCCESS] sw799 image prepared with single DTB"
-echo "-------------------------------------------------"
-ls -lh "${BOOT_DIR}"
+    # Disable WiFi if requested
+    if [[ "$ENABLE_WIFI" != "true" ]]; then
+        info "Disabling WiFi"
+        rm -f etc/config/wireless
+    fi
+
+    # Create compressed image
+    IMG_NAME="openwrt-sw799-${KERNEL_VERSION}.img"
+    cd "$WORKDIR/rootfs"
+    tar -czf "$OUTPUTDIR/$IMG_NAME" .
+    info "OpenWrt DIY image created: $OUTPUTDIR/$IMG_NAME"
+}
+
+#----------------------------------------
+# Main
+#----------------------------------------
+info "Starting DIY build for SW799..."
+prepare_rootfs
+build_openwrt_image
+info "DIY build completed successfully."

@@ -1,26 +1,22 @@
-#==========================================================================
-# Description: Package OpenWrt image for SW799 (DIY)
-#==========================================================================
-
 name: Build OpenWrt image (SW799 DIY)
 
 on:
   workflow_dispatch:
     inputs:
       OPENWRT_VER:
-        description: 'OpenWrt version (e.g., openwrt-23.05)'
+        description: 'OpenWrt version'
         required: true
         default: 'openwrt-23.05'
       KERNEL_VER:
-        description: 'Kernel version (6.1.x / 6.6.x / 6.12.x)'
+        description: 'Kernel version'
         required: true
         default: '6.6.68'
       ENABLE_WIFI:
-        description: 'Enable WiFi (true/false)'
+        description: 'Enable WiFi'
         required: true
         default: 'false'
       UPLOAD_RELEASE:
-        description: 'Upload release after build (true/false)'
+        description: 'Upload release after build'
         required: true
         default: 'true'
 
@@ -28,28 +24,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      PACKAGE_SOC: diy
-      SCRIPT_DIY: mk_sw799.sh
-      SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
-      OPENWRT_ARMSR: ${{ github.workspace }}/opt/download/openwrt-rootfs.tar.gz
-      ENABLE_WIFI: false
-      UPLOAD_RELEASE: true
-
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
       - name: Download OpenWrt rootfs
         run: |
-          set -e
           mkdir -p opt/download
-
           ROOTFS_REPO="ophub/flippy-openwrt-actions"
           ROOTFS_TAG="OpenWrt_armv8_rootfs"
           ROOTFS_SUFFIX="-rootfs.tar.gz"
 
-          echo "Querying rootfs release info..."
           release_json=$(curl -s \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20)
@@ -63,22 +48,9 @@ jobs:
             reverse |
             .[0]')
 
-          [[ -z "${asset_info}" || "${asset_info}" == "null" ]] && {
-            echo "ERROR: No valid rootfs asset found."
-            exit 1
-          }
-
           asset_url=$(echo "${asset_info}" | jq -r '.url')
-          asset_name=$(echo "${asset_info}" | jq -r '.name')
-
-          echo "Downloading rootfs: ${asset_name}"
-          curl -fSL \
-            -H "Accept: application/octet-stream" \
-            "${asset_url}" \
-            -o opt/download/openwrt-rootfs.tar.gz
-
-          ls -lh opt/download/openwrt-rootfs.tar.gz
-          file opt/download/openwrt-rootfs.tar.gz
+          curl -fSL -H "Accept: application/octet-stream" \
+            "${asset_url}" -o opt/download/openwrt-rootfs.tar.gz
 
       - name: Build OpenWrt DIY image
         uses: ophub/flippy-openwrt-actions@main

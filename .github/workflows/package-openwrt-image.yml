@@ -1,51 +1,27 @@
-name: Build OpenWrt image (SW799 DIY)
+name: Build OpenWrt for SW799
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Download OpenWrt rootfs
+      # 关键步骤 1：在 GITHUB_WORKSPACE 根目录下载 rootfs
+      - name: Download OpenWrt armsr rootfs
         run: |
-          set -e
-          mkdir -p opt/download
+          curl -L \
+            https://github.com/ophub/flippy-openwrt-actions/releases/latest/download/openwrt-armsr-armv8-generic-rootfs.tar.gz \
+            -o openwrt-armsr-armv8-generic-rootfs.tar.gz
 
-          ROOTFS_REPO="ophub/flippy-openwrt-actions"
-          ROOTFS_TAG="OpenWrt_armv8_rootfs"
-          ROOTFS_SUFFIX="-rootfs.tar.gz"
+          ls -lh openwrt-armsr-armv8-generic-rootfs.tar.gz
 
-          release_json=$(curl -s \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${ROOTFS_REPO}/releases?per_page=20")
-
-          asset_info=$(echo "${release_json}" | jq -r \
-            --arg TAG "${ROOTFS_TAG}" \
-            --arg SUF "${ROOTFS_SUFFIX}" \
-            '[.[] | select(.tag_name | contains($TAG))] |
-             map(.assets[] | select(.name | endswith($SUF))) |
-             sort_by(.updated_at) |
-             reverse |
-             .[0]')
-
-          asset_url=$(echo "${asset_info}" | jq -r '.url')
-          asset_name=$(echo "${asset_info}" | jq -r '.name')
-
-          echo "Downloading ${asset_name}"
-
-          curl -fSL \
-            -H "Accept: application/octet-stream" \
-            "${asset_url}" \
-            -o "opt/download/${asset_name}"
-
-          ls -lh opt/download
-
-      - name: Build OpenWrt DIY image
+      # 关键步骤 2：调用 flippy-openwrt-actions
+      - name: Build with flippy-openwrt-actions
         uses: ophub/flippy-openwrt-actions@main
         with:
           mode: flippy
@@ -54,9 +30,9 @@ jobs:
           SCRIPT_DIY: mk_sw799.sh
           SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
 
-          # ⭐⭐⭐ 核心：必须存在，且只写文件名 ⭐⭐⭐
+          # 关键变量：相对 GITHUB_WORKSPACE 的真实路径
           OPENWRT_ARMSR: openwrt-armsr-armv8-generic-rootfs.tar.gz
 
-          KERNEL_VER: 6.6.68
           ENABLE_WIFI: false
           UPLOAD_RELEASE: true
+          KERNEL_VER: 6.6.68

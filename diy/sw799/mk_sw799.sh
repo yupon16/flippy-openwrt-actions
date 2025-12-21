@@ -7,22 +7,22 @@ set -e
 
 echo "[INFO] Enter SW799 DIY script"
 
-# 必须用正确 DTB 绑定格式
+# 必须：RK3399 DTB 绑定格式
 CUSTOMIZE_RK3399="sw799:rk3399-bozz-sw799.dtb"
 
-# SOC / BOARD 信息（可选）
 SOC="rk3399"
 BOARD="sw799"
 
-# flippy 内部 rootfs 文件路径
-OPENWRT_ARMSR="openwrt_packit/openwrt-armsr-armv8-generic-rootfs.tar.gz"
+# flippy 已经把 rootfs 复制到 openwrt_packit 目录
+OPENWRT_ARMSR="openwrt-armsr-armv8-generic-rootfs.tar.gz"
 
 if [[ ! -f "${OPENWRT_ARMSR}" ]]; then
-    echo "[ERROR] OPENWRT_ARMSR not found: ${OPENWRT_ARMSR}"
+    echo "[ERROR] rootfs not found: ${OPENWRT_ARMSR}"
+    ls -lh
     exit 1
 fi
 
 echo "[INFO] Using rootfs: ${OPENWRT_ARMSR}"
 
-# 交还给 flippy / packit
+# 交给 packit
 packit_build

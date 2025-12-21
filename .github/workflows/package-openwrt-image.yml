@@ -8,10 +8,26 @@ name: Build OpenWrt image (sw799 DIY)
 
 on:
   workflow_dispatch:
-
+    inputs:
+      OPENWRT_VER:
+        description: 'OpenWrt version (e.g., openwrt-23.05)'
+        required: true
+        default: 'openwrt-23.05'
+      KERNEL_VER:
+        description: 'Kernel version (6.1.x / 6.6.x / 6.12.x)'
+        required: true
+        default: '6.6.68'
+      ENABLE_WIFI:
+        description: 'Enable WiFi (true/false)'
+        required: true
+        default: 'false'
+      UPLOAD_RELEASE:
+        description: 'Upload release after build (true/false)'
+        required: true
+        default: 'true'
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     env:
       # ===== 核心三行（决定一切）=====
@@ -19,17 +35,29 @@ jobs:
       SCRIPT_DIY: mk_sw799.sh
       SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
 
-      # ===== 基础配置（保持默认即可）=====
-      OPENWRT_VER: openwrt-23.05
-      KERNEL_VER: 6.6.68
-      ENABLE_WIFI: false
-      UPLOAD_RELEASE: true
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Build OpenWrt with flippy
+      - name: Set environment variables
+        run: |
+          echo "OPENWRT_VER=${{ github.event.inputs.OPENWRT_VER }}" >> $GITHUB_ENV
+          echo "KERNEL_VER=${{ github.event.inputs.KERNEL_VER }}" >> $GITHUB_ENV
+          echo "ENABLE_WIFI=${{ github.event.inputs.ENABLE_WIFI }}" >> $GITHUB_ENV
+          echo "UPLOAD_RELEASE=${{ github.event.inputs.UPLOAD_RELEASE }}" >> $GITHUB_ENV
+
+      - name: Download OpenWrt rootfs
+        run: |
+          mkdir -p opt/download
+          ROOTFS_FILE="openwrt-${{ github.event.inputs.OPENWRT_VER }}-armvirt-64-default-rootfs.tar.gz"
+          echo "Downloading rootfs: $ROOTFS_FILE ..."
+          curl -L \
+            https://github.com/ophub/flippy-openwrt-actions/releases/latest/download/$ROOTFS_FILE \
+            -o opt/download/openwrt-rootfs.tar.gz
+          echo "OPENWRT_ARMSR=opt/download/openwrt-rootfs.tar.gz" >> $GITHUB_ENV
+
+      - name: Build OpenWrt DIY image
         uses: ophub/flippy-openwrt-actions@main
         with:
-          env: ${{ toJSON(env) }}
+          mode: flippy
+

@@ -1,28 +1,22 @@
-#!/usr/bin/env bash
-#========================================================
-# mk_sw799.sh - flippy DIY script for SW799 (RK3399)
-#========================================================
-
+#!/bin/bash
 set -e
 
 echo "[INFO] Enter SW799 DIY script"
 
-# 必须：RK3399 DTB 绑定格式
-CUSTOMIZE_RK3399="sw799:rk3399-bozz-sw799.dtb"
+# flippy 已经把 rootfs 拷贝到 openwrt_packit 目录
+ROOTFS_FILE="openwrt-armsr-armv8-generic-rootfs.tar.gz"
 
-SOC="rk3399"
-BOARD="sw799"
-
-# flippy 已经把 rootfs 复制到 openwrt_packit 目录
-OPENWRT_ARMSR="openwrt-armsr-armv8-generic-rootfs.tar.gz"
-
-if [[ ! -f "${OPENWRT_ARMSR}" ]]; then
-    echo "[ERROR] rootfs not found: ${OPENWRT_ARMSR}"
-    ls -lh
+if [[ ! -f "${ROOTFS_FILE}" ]]; then
+    echo "Error: rootfs not found: ${ROOTFS_FILE}"
     exit 1
 fi
 
-echo "[INFO] Using rootfs: ${OPENWRT_ARMSR}"
+echo "[INFO] Using rootfs: ${ROOTFS_FILE}"
 
-# 交给 packit
-packit_build
+# === 这里什么都不改，也能成功 ===
+# 后续你要做的，只是在这里加：
+# - 替换 DTB
+# - 调整 boot.cmd / extlinux.conf
+# - 复制 sw799 专用文件
+
+echo "[INFO] SW799 DIY script finished"

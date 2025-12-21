@@ -1,97 +1,40 @@
 #!/usr/bin/env bash
 #========================================================
-# mk_sw799.sh - DIY packaging script for SW799
+# mk_sw799.sh - flippy DIY script for SW799 (RK3399)
 #========================================================
 
-set -euo pipefail
+set -e
 
-#----------------------------------------
-# Variables from workflow environment
-#----------------------------------------
-OPENWRT_ROOTFS="${OPENWRT_ARMSR:-}"
-KERNEL_VERSION="${KERNEL_VER:-6.6.68}"
-ENABLE_WIFI="${ENABLE_WIFI:-false}"
+echo "[INFO] Enter SW799 DIY script"
 
-# Optional RK3399 DTB customization
-RK3399_BOARD="${CUSTOMIZE_RK3399%%:*}"
-RK3399_DTB="${CUSTOMIZE_RK3399##*:}"
+#--------------------------------------------------
+# 必须声明：启用 RK3399 定制
+#--------------------------------------------------
+CUSTOMIZE_RK3399="yes"
 
-# Output directories
-WORKDIR="/opt/openwrt_packit"
-OUTPUTDIR="${WORKDIR}/output"
+#--------------------------------------------------
+# SOC / BOARD 基本信息
+#--------------------------------------------------
+SOC="rk3399"
+BOARD="sw799"
 
-#----------------------------------------
-# Functions
-#----------------------------------------
-error() {
-    echo "[ERROR] $1"
+#--------------------------------------------------
+# DTB 选择（先用一个确定存在的）
+# 后续你再精修
+#--------------------------------------------------
+DTB_FILE="rk3399-nanopi-r4s.dtb"
+
+#--------------------------------------------------
+# Rootfs（由 workflow 提供）
+#--------------------------------------------------
+if [[ -z "${OPENWRT_ARMSR}" ]]; then
+    echo "[ERROR] OPENWRT_ARMSR not set"
     exit 1
-}
+fi
 
-info() {
-    echo "[INFO] $1"
-}
+echo "[INFO] Using rootfs: ${OPENWRT_ARMSR}"
 
-download_kernel() {
-    local kernel_tag="$1"
-    local kernel_ver="$2"
-    local dest_dir="$3"
-
-    mkdir -p "$dest_dir"
-    local kernel_tar="${dest_dir}/boot-${kernel_ver}.tar.gz"
-    if [[ ! -f "$kernel_tar" ]]; then
-        info "Downloading kernel ${kernel_ver}..."
-        curl -L -o "$kernel_tar" \
-          "https://github.com/breakingbadboy/OpenWrt/releases/download/kernel_${kernel_tag}/boot-${kernel_ver}.tar.gz"
-    fi
-    tar -xf "$kernel_tar" -C "$dest_dir"
-}
-
-prepare_rootfs() {
-    if [[ -z "$OPENWRT_ROOTFS" || ! -f "$OPENWRT_ROOTFS" ]]; then
-        error "OPENWRT_ARMSR not set or file missing"
-    fi
-    info "Using rootfs: $OPENWRT_ROOTFS"
-    mkdir -p "$WORKDIR/rootfs"
-    tar -xzf "$OPENWRT_ROOTFS" -C "$WORKDIR/rootfs"
-}
-
-build_openwrt_image() {
-    mkdir -p "$OUTPUTDIR"
-    cd "$WORKDIR/rootfs"
-
-    # Customize default IP
-    sed -i "s/\${ipaddr:-\"192.168.1.1\"}/\${ipaddr:-\"192.168.1.1\"}/" bin/config_generate
-
-    # Copy kernel
-    KERNEL_DIR="$WORKDIR/kernel"
-    mkdir -p "$KERNEL_DIR"
-    download_kernel "stable" "$KERNEL_VERSION" "$KERNEL_DIR"
-    cp -r "$KERNEL_DIR"/* "$WORKDIR/rootfs/boot/"
-
-    # Apply RK3399 DTB if provided
-    if [[ -n "$RK3399_BOARD" && -n "$RK3399_DTB" ]]; then
-        info "Applying custom DTB for ${RK3399_BOARD}: ${RK3399_DTB}"
-        cp "$WORKDIR/kernel/${RK3399_DTB}" "$WORKDIR/rootfs/boot/$(basename $RK3399_DTB)"
-    fi
-
-    # Disable WiFi if requested
-    if [[ "$ENABLE_WIFI" != "true" ]]; then
-        info "Disabling WiFi"
-        rm -f etc/config/wireless
-    fi
-
-    # Create compressed image
-    IMG_NAME="openwrt-sw799-${KERNEL_VERSION}.img"
-    cd "$WORKDIR/rootfs"
-    tar -czf "$OUTPUTDIR/$IMG_NAME" .
-    info "OpenWrt DIY image created: $OUTPUTDIR/$IMG_NAME"
-}
-
-#----------------------------------------
-# Main
-#----------------------------------------
-info "Starting DIY build for SW799..."
-prepare_rootfs
-build_openwrt_image
-info "DIY build completed successfully."
+#--------------------------------------------------
+# 关键：交还给 flippy / packit
+#--------------------------------------------------
+packit_build

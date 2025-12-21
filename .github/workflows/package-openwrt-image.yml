@@ -16,10 +16,13 @@ jobs:
         with:
           mode: flippy
         env:
-          # ===== 必须三行 =====
+          # ===== DIY 模式必须三行 =====
           PACKAGE_SOC: diy
           SCRIPT_DIY: mk_sw799.sh
           SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
+
+          # =====【关键修正项】必须指定 ARMv8 rootfs =====
+          OPENWRT_ARMSR: openwrt-armsr-armv8-generic-rootfs.tar.gz
 
           # ===== 核心参数 =====
           KERNEL_VER: 6.6.68

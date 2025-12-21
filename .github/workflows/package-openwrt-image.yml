@@ -86,17 +86,17 @@ jobs:
           ls -lh opt/download/openwrt-rootfs.tar.gz
           file opt/download/openwrt-rootfs.tar.gz
 
-          - name: Build OpenWrt DIY image
-            uses: ophub/flippy-openwrt-actions@main
-            env:
-             # ===== flippy 必须从这里拿变量 =====
-              PACKAGE_SOC: diy
-              SCRIPT_DIY: mk_sw799.sh
-              SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
+      - name: Build OpenWrt DIY image
+        uses: ophub/flippy-openwrt-actions@main
+        env:
+           # ===== flippy 必须从这里拿变量 =====
+           PACKAGE_SOC: diy
+           SCRIPT_DIY: mk_sw799.sh
+           SCRIPT_DIY_PATH: diy/sw799/mk_sw799.sh
 
-              OPENWRT_ARMSR: opt/download/openwrt-rootfs.tar.gz
-              KERNEL_VER: 6.6.68
-              ENABLE_WIFI: false
-              UPLOAD_RELEASE: true
-            with:
-              mode: flippy
+           OPENWRT_ARMSR: opt/download/openwrt-rootfs.tar.gz
+           KERNEL_VER: 6.6.68
+           ENABLE_WIFI: false
+           UPLOAD_RELEASE: true
+        with:
+           mode: flippy

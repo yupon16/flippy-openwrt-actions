@@ -237,22 +237,24 @@ jobs:
           SCRIPT_DIY_PATH: ${{ inputs.script_diy_path }}
           WHOAMI: ${{ inputs.builder_name }}
 
-      - name: Force DTB for SW799 (minimal patch)   
+      - name: Force DTB for SW799 (minimal patch)  
+        if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()
         run: |
           set -e
-          IMG=$(ls /opt/openwrt_packit/output/*.img | head -n1)
-
-           mkdir -p /tmp/boot
-           sudo mount -o loop,offset=1048576 "$IMG" /tmp/boot
-
-           echo "Force fdtfile"
-           sudo sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3399-bozz-sw799a.dtb|' /tmp/boot/armbianEnv.txt
-
-           echo "Verify:"
-           grep fdtfile /tmp/boot/armbianEnv.txt
-
-           sudo umount /tmp/boot
-
+          echo "Locate IMG..."
+          ls -lh "${PACKAGED_OUTPUTPATH}"
+          IMG=$(ls "${PACKAGED_OUTPUTPATH}"/*.img | head -n1)
+          echo "Using image: $IMG"
+          sudo mkdir -p /tmp/boot
+          echo "Mount boot partition..."
+          sudo mount -o loop,offset=1048576 "$IMG" /tmp/boot
+          echo "Force fdtfile"
+          sudo sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3399-bozz-sw799a.dtb|' /tmp/boot/armbianEnv.txt
+          echo "Lock overlay_prefix"
+          sudo sed -i 's|^overlay_prefix=.*|overlay_prefix=rk3399|' /tmp/boot/armbianEnv.txt || true
+          echo "Verify armbianEnv.txt"
+          cat /tmp/boot/armbianEnv.txt | grep -E 'fdtfile|overlay_prefix'
+          sudo umount /tmp/boot
 
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main

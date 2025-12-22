@@ -237,7 +237,7 @@ jobs:
           SCRIPT_DIY_PATH: ${{ inputs.script_diy_path }}
           WHOAMI: ${{ inputs.builder_name }}
 
-      - name: Force DTB for SW799 (minimal patch)  
+      - name: Force DTB for SW799 (minimal patch)
         if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()
         run: |
           set -e
@@ -247,7 +247,7 @@ jobs:
           IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*.img.gz | head -n1)
           echo "Using compressed image: $IMG_GZ"
           echo "Decompress image..."
-          gunzip -k "$IMG_GZ"
+          sudo gunzip -k "$IMG_GZ"
           IMG="${IMG_GZ%.gz}"
           echo "Decompressed image: $IMG"
           sudo mkdir -p /tmp/boot
@@ -261,7 +261,7 @@ jobs:
           grep -E 'fdtfile|overlay_prefix' /tmp/boot/armbianEnv.txt
           sudo umount /tmp/boot
           echo "Recompress image..."
-          gzip -f "$IMG"
+          sudo gzip -f "$IMG"
 
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main

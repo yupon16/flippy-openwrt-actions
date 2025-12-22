@@ -241,10 +241,15 @@ jobs:
         if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()
         run: |
           set -e
-          echo "Locate IMG..."
+          echo "List output files:"
           ls -lh "${PACKAGED_OUTPUTPATH}"
-          IMG=$(ls "${PACKAGED_OUTPUTPATH}"/*.img | head -n1)
-          echo "Using image: $IMG"
+          echo "Locate img.gz..."
+          IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*.img.gz | head -n1)
+          echo "Using compressed image: $IMG_GZ"
+          echo "Decompress image..."
+          gunzip -k "$IMG_GZ"
+          IMG="${IMG_GZ%.gz}"
+          echo "Decompressed image: $IMG"
           sudo mkdir -p /tmp/boot
           echo "Mount boot partition..."
           sudo mount -o loop,offset=1048576 "$IMG" /tmp/boot
@@ -253,8 +258,10 @@ jobs:
           echo "Lock overlay_prefix"
           sudo sed -i 's|^overlay_prefix=.*|overlay_prefix=rk3399|' /tmp/boot/armbianEnv.txt || true
           echo "Verify armbianEnv.txt"
-          cat /tmp/boot/armbianEnv.txt | grep -E 'fdtfile|overlay_prefix'
+          grep -E 'fdtfile|overlay_prefix' /tmp/boot/armbianEnv.txt
           sudo umount /tmp/boot
+          echo "Recompress image..."
+          gzip -f "$IMG"
 
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main

@@ -102,3 +102,30 @@ jobs:
           artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
           makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fix rk3399 DTB placement (U-Boot required)
+        run: |
+          set -e
+
+          OUT="${PACKAGED_OUTPUTPATH}"
+          IMG=$(ls $OUT/*.img | head -n1)
+
+          echo "Using image: $IMG"
+
+          mkdir -p /tmp/img
+          sudo mount -o loop,offset=1048576 "$IMG" /tmp/img
+
+          echo "Ensure /dtb exists"
+          sudo mkdir -p /tmp/img/dtb
+
+          echo "Install correct DTB"
+          sudo cp files/boot/dtb/rk3399-bozz-sw799.dtb /tmp/img/dtb/
+
+          echo "Remove all other rk3399 dtb"
+          sudo find /tmp/img/dtb -type f ! -name rk3399-bozz-sw799.dtb -delete
+
+          echo "Verify DTB magic:"
+          hexdump -C /tmp/img/dtb/rk3399-bozz-sw799.dtb | head -n 2
+
+          sudo umount /tmp/img
+

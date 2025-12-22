@@ -252,7 +252,7 @@ jobs:
           echo "Decompressed image: $IMG"
           sudo mkdir -p /tmp/boot
           echo "Mount boot partition..."
-          sudo mount -o loop,offset=1048576 "$IMG" /tmp/boot
+          sudo mount -o loop,offset=16777216 "$IMG" /tmp/boot
           echo "Force fdtfile"
           sudo sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3399-bozz-sw799a.dtb|' /tmp/boot/armbianEnv.txt
           echo "Lock overlay_prefix"

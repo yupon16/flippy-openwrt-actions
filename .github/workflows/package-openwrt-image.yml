@@ -81,44 +81,44 @@ jobs:
           gunzip -c Image.gz > Image
           CUSTOM_DTB_FILE=$(ls *.dtb | head -1)
 
-          cat > kernel.its <<EOF
-/dts-v1/;
-
-/ {
-    description = "OpenWrt FIT with custom DTB";
-    #address-cells = <1>;
-
-    images {
-        kernel@1 {
-            description = "Linux Kernel";
-            data = /incbin/("Image");
-            type = "kernel";
-            arch = "arm64";
-            os = "linux";
-            compression = "none";
-            load = <0x00200000>;
-            entry = <0x00200000>;
-        };
-
-        fdt@1 {
-            description = "$DTB_NAME";
-            data = /incbin/("$CUSTOM_DTB_FILE");
-            type = "flat_dt";
-            arch = "arm64";
-            compression = "none";
-        };
-    };
-
-    configurations {
-        default = "conf@1";
-        conf@1 {
-            description = "Boot with custom DTB";
-            kernel = "kernel@1";
-            fdt = "fdt@1";
-        };
-    };
-};
-EOF
+          # Generate kernel.its without HERE-document to avoid YAML parsing issues
+          printf '%s\n' \
+            '/dts-v1/;' \
+            '' \
+            '/ {' \
+            '    description = "OpenWrt FIT with custom DTB";' \
+            '    #address-cells = <1>;' \
+            '' \
+            '    images {' \
+            '        kernel@1 {' \
+            '            description = "Linux Kernel";' \
+            '            data = /incbin/("Image");' \
+            '            type = "kernel";' \
+            '            arch = "arm64";' \
+            '            os = "linux";' \
+            '            compression = "none";' \
+            '            load = <0x00200000>;' \
+            '            entry = <0x00200000>;' \
+            '        };' \
+            '' \
+            '        fdt@1 {' \
+            '            description = "'"$DTB_NAME"'";' \
+            '            data = /incbin/("'"$CUSTOM_DTB_FILE"'");' \
+            '            type = "flat_dt";' \
+            '            arch = "arm64";' \
+            '            compression = "none";' \
+            '        };' \
+            '    };' \
+            '' \
+            '    configurations {' \
+            '        default = "conf@1";' \
+            '        conf@1 {' \
+            '            description = "Boot with custom DTB";' \
+            '            kernel = "kernel@1";' \
+            '            fdt = "fdt@1";' \
+            '        };' \
+            '    };' \
+            '};' > kernel.its
 
           mkimage -f kernel.its Image.itb
           mkdir -p output

@@ -1,188 +1,141 @@
-#==========================================================================
-# Description: Package OpenWrt image (RK3399 - Kernel + Rootfs Only)
-# Purpose: Output ONLY Image.gz and rootfs.tar.gz, NO full disk image
-# Author: yupon16
-#==========================================================================
-
-name: Build OpenWrt for RK3399 (Kernel + Rootfs Only)
+name: Build OpenWrt RK3399 with Custom DTB (from files/boot/dtb)
 
 on:
   workflow_dispatch:
     inputs:
       openwrt_kernel:
-        description: "Select kernel version"
+        description: "Kernel version"
         required: false
-        default: "6.1.y_6.12.y"
-        type: choice
-        options:
-          - 5.10.y
-          - 5.15.y
-          - 6.1.y
-          - 6.6.y
-          - 6.12.y
-          - 5.10.y_5.15.y
-          - 5.15.y_6.1.y
-          - 6.1.y_6.12.y
-          - 6.1.y_6.6.y
-          - 6.6.y_6.12.y
-      auto_kernel:
-        description: "Auto use the latest kernel"
-        required: false
-        default: true
-        type: boolean
+        default: "6.6.y"
+        type: string
       openwrt_ip:
-        description: "Set OpenWrt default IP address"
+        description: "Default IP"
         required: false
         default: "192.168.1.1"
       builder_name:
-        description: "Builder signature"
+        description: "Builder name"
         required: false
         default: "yupon16"
-        type: string
-
-env:
-  TZ: Etc/UTC
 
 jobs:
   build:
     runs-on: ubuntu-24.04
-    if: ${{ github.event.repository.owner.id }} == ${{ github.event.sender.id }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Initialization environment
-        id: init
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      - name: Install dependencies
         run: |
-          docker rmi -f $(docker images -q) 2>/dev/null || true
-          [[ -n "${AGENT_TOOLSDIRECTORY}" ]] && sudo rm -rf "${AGENT_TOOLSDIRECTORY}"
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android 2>/dev/null
-          sudo swapoff -a
-          sudo rm -f /swapfile /mnt/swapfile
-          sudo -E apt-get -y update
-          sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          sudo -E apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-make-openwrt-depends)
-          sudo -E systemctl daemon-reload
-          sudo -E apt-get -y autoremove --purge
-          sudo -E apt-get clean
-          sudo sed -i '/NVM_DIR/d;/skel/d' /root/{.bashrc,.profile}
-          sudo rm -rf ~/{.cargo,.dotnet,.rustup}
-          sudo -E timedatectl set-timezone "${TZ:-Etc/UTC}"
-          sudo -E ntpdate ntp.ubuntu.com 0.pool.ntp.org || true
-          sudo -E timedatectl set-ntp true
-          date -u
-          timedatectl status || true
-          echo "status=success" >> ${GITHUB_OUTPUT}
+          sudo apt-get update
+          sudo apt-get install -y u-boot-tools wget jq curl
 
-      - name: Create simulated physical disk
+      - name: Download OpenWrt rootfs (armsr)
         run: |
-          mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 1)
-          root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
-          sudo truncate -s "${mnt_size}"G /mnt/mnt.img
-          sudo truncate -s "${root_size}"G /root.img
-          sudo losetup /dev/loop6 /mnt/mnt.img
-          sudo losetup /dev/loop7 /root.img
-          sudo pvcreate /dev/loop6
-          sudo pvcreate /dev/loop7
-          sudo vgcreate github /dev/loop6 /dev/loop7
-          sudo lvcreate -n runner -l 100%FREE github
-          sudo mkfs.xfs -f -i sparse=0 -b size=4096 /dev/github/runner
-          sudo mkdir -p /builder
-          sudo mount /dev/github/runner /builder
-          sudo chown -R runner:runner /builder
-          df -Th
-          echo "status=success" >> ${GITHUB_OUTPUT}
+          mkdir -p /opt/download
+          cd /opt/download
+          latest=$(curl -s https://api.github.com/repos/ophub/flippy-openwrt-actions/releases | \
+                   jq -r '.[] | select(.tag_name | startswith("OpenWrt_armv8_rootfs")) | .assets[0].browser_download_url' | head -1)
+          wget -O rootfs.tar.gz "$latest"
 
-      - name: Download OpenWrt rootfs file
-        id: download
-        working-directory: /builder
-        if: ${{ steps.init.outputs.status }} == 'success' && !cancelled()
+      - name: Download flippy kernel (6.6.119)
         run: |
-          armsr_tarfile_path="opt/download"
-          [[ -d "${armsr_tarfile_path}" ]] || mkdir -p ${armsr_tarfile_path}
-          ln -sf /builder/opt ${{ github.workspace }}/opt
-          sudo rm -rf /opt && sudo ln -sf /builder/opt /opt
+          mkdir -p /opt/kernel
+          wget -O /opt/kernel.tar.gz https://github.com/ophub/kernel/releases/download/kernel_flippy/6.6.119.tar.gz
+          tar -xzf /opt/kernel.tar.gz -C /opt/kernel --strip-components=1
 
-          latest_version=$(curl -s \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              https://api.github.com/repos/ophub/flippy-openwrt-actions/releases?per_page=20 | \
-              jq -r --arg RTK "OpenWrt_armv8_rootfs" \
-              --arg BOARD "-rootfs.tar.gz" \
-              '[.[] | select(.tag_name | contains($RTK))] |
-              map(.assets[] | select(.name | endswith($BOARD))) |
-              sort_by(.updated_at) |
-              reverse |
-              .[0] |
-              {data: .updated_at, url: .url, name: .name}')
-
-          [[ -z "${latest_version}" || "${latest_version}" == "null" ]] && {
-              echo "Invalid OpenWrt rootfs download address."
-              exit 1
-          }
-
-          latest_url="$(echo ${latest_version} | jq -r '.url')"
-          openwrt_filename="$(echo ${latest_version} | jq -r '.name')"
-
-          curl -fsSL \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/octet-stream" \
-              "${latest_url}" \
-              -o "${armsr_tarfile_path}/${openwrt_filename}"
-          [[ "${?}" -ne "0" ]] && echo "Download failed." && exit 1
-
-          echo "build_tag=OpenWrt_rk3399_k$(date +"%Y.%m")" >> ${GITHUB_ENV}
-          echo "status=success" >> ${GITHUB_OUTPUT}
-
-      - name: Build OpenWrt (Kernel + Rootfs Only)
-        uses: ophub/flippy-openwrt-actions@main
-        if: ${{ steps.download.outputs.status }} == 'success' && !cancelled()
-        env:
-          OPENWRT_ARMSR: opt/download/*rootfs.tar.gz
-          PACKAGE_SOC: rk3399
-          CUSTOMIZE_RK3399: none
-          KERNEL_REPO_URL: ophub/kernel
-          KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
-          KERNEL_AUTO_LATEST: ${{ inputs.auto_kernel }}
-          OPENWRT_IP: ${{ inputs.openwrt_ip }}
-          WHOAMI: ${{ inputs.builder_name }}
-          # === 关键：只输出分离文件 ===
-          NO_PACKAGED_IMAGE: true
-          OUTPUT_IMAGE_GZ: true
-          OUTPUT_ROOTFS_TAR: true
-          OUTPUT_ROOTFS_EXT4: false   # 可选，设为 true 如果你也想要 ext4
-          SKIP_U_BOOT: true
-          SKIP_DTB: true              # 不单独打包 .dtb 文件（但内核仍含 DTB）
-          
-      - name: Set environment for artifact upload
-
-        if: ${{ steps.build_openwrt.outcome == 'success' && !cancelled() }}
-
+      - name: Prepare workspace
         run: |
+          mkdir -p /opt/build
+          cp /opt/download/rootfs.tar.gz /opt/build/
+          cp /opt/kernel/Image.gz /opt/build/
 
-          echo "PACKAGED_STATUS=success" >> $GITHUB_ENV
+      - name: Use your custom DTB from files/boot/dtb
+        run: |
+          # 查找第一个 .dtb 文件（支持多个，但只用一个）
+          if [ -d "files/boot/dtb" ] && ls files/boot/dtb/*.dtb 1> /dev/null 2>&1; then
+            CUSTOM_DTB=$(ls files/boot/dtb/*.dtb | head -1)
+            echo "Found custom DTB: $CUSTOM_DTB"
+            cp "$CUSTOM_DTB" /opt/build/
+            DTB_NAME=$(basename "$CUSTOM_DTB" .dtb)
+            echo "DTB_NAME=$DTB_NAME" >> $GITHUB_ENV
+          else
+            echo "ERROR: No .dtb file found in files/boot/dtb/"
+            exit 1
+          fi
 
-          echo "PACKAGED_OUTPUTPATH=/opt/openwrt/bin/targets/rockchip/armv8" >> $GITHUB_ENV
+      - name: Create FIT image (Image.itb) with custom DTB
+        working-directory: /opt/build
+        run: |
+          # 解压内核
+          gunzip -c Image.gz > Image
 
+          # 获取 DTB 路径
+          CUSTOM_DTB_FILE=$(ls *.dtb | head -1)
 
-      - name: Upload Artifacts
+          # 生成 ITS
+          cat > kernel.its <<EOF
+/dts-v1/;
+
+/ {
+    description = "OpenWrt FIT with custom DTB";
+    #address-cells = <1>;
+
+    images {
+        kernel@1 {
+            description = "Linux Kernel";
+            data = /incbin/("Image");
+            type = "kernel";
+            arch = "arm64";
+            os = "linux";
+            compression = "none";
+            load = <0x00200000>;
+            entry = <0x00200000>;
+        };
+
+        fdt@1 {
+            description = "${{ env.DTB_NAME }}";
+            data = /incbin/("${CUSTOM_DTB_FILE}");
+            type = "flat_dt";
+            arch = "arm64";
+            compression = "none";
+        };
+    };
+
+    configurations {
+        default = "conf@1";
+        conf@1 {
+            description = "Boot with custom DTB";
+            kernel = "kernel@1";
+            fdt = "fdt@1";
+        };
+    };
+};
+EOF
+
+          # 构建 FIT
+          mkimage -f kernel.its Image.itb
+
+          # 准备输出
+          mkdir -p output
+          cp Image.itb output/
+          cp rootfs.tar.gz output/
+          cp "$CUSTOM_DTB_FILE" output/  # 备用
+
+          cd output
+          sha256sum * > sha256sums
+          ls -lh
+
+      - name: Upload to GitHub Release
         uses: ncipollo/release-action@main
-        if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()
         with:
-          tag: ${{ env.build_tag }}
-          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
+          tag: "OpenWrt_rk3399_custom-dtb_$(date +%Y.%m.%d)"
+          artifacts: "/opt/build/output/*"
           allowUpdates: true
-          removeArtifacts: false
-          replacesArtifacts: true
-          makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ### OpenWrt for RK3399 (Separate Files)
-            - **Image.gz**: Compressed kernel (includes embedded DTB for sw799/tvi3315a)
+            ### OpenWrt for RK3399 with Custom DTB
+            - **Image.itb**: Kernel + your DTB (from `files/boot/dtb/`)
             - **rootfs.tar.gz**: Root filesystem
             - **No U-Boot included** — use your original Android firmware's bootloader
-            - Default IP: 192.168.1.1
             - Builder: ${{ inputs.builder_name }}
+            - Default IP: ${{ inputs.openwrt_ip }}

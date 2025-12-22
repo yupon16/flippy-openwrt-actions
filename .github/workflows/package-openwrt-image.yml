@@ -1,78 +1,25 @@
-name: Build OpenWrt RK3399 with Custom DTB (from files/boot/dtb)
-
-on:
-  workflow_dispatch:
-    inputs:
-      openwrt_kernel:
-        description: "Kernel version"
-        required: false
-        default: "6.6.y"
-        type: string
-      openwrt_ip:
-        description: "Default IP"
-        required: false
-        default: "192.168.1.1"
-      builder_name:
-        description: "Builder name"
-        required: false
-        default: "yupon16"
-
-jobs:
-  build:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y u-boot-tools wget jq curl
-
-      - name: Download OpenWrt rootfs (armsr)
-        run: |
-          mkdir -p /opt/download
-          cd /opt/download
-          latest=$(curl -s https://api.github.com/repos/ophub/flippy-openwrt-actions/releases | \
-                   jq -r '.[] | select(.tag_name | startswith("OpenWrt_armv8_rootfs")) | .assets[0].browser_download_url' | head -1)
-          wget -O rootfs.tar.gz "$latest"
-
-      - name: Download flippy kernel (6.6.119)
-        run: |
-          mkdir -p /opt/kernel
-          wget -O /opt/kernel.tar.gz https://github.com/ophub/kernel/releases/download/kernel_flippy/6.6.119.tar.gz
-          tar -xzf /opt/kernel.tar.gz -C /opt/kernel --strip-components=1
-
-      - name: Prepare workspace
-        run: |
-          mkdir -p /opt/build
-          cp /opt/download/rootfs.tar.gz /opt/build/
-          cp /opt/kernel/Image.gz /opt/build/
-
       - name: Use your custom DTB from files/boot/dtb
+        id: dtb
         run: |
-          # 查找第一个 .dtb 文件（支持多个，但只用一个）
-          if [ -d "files/boot/dtb" ] && ls files/boot/dtb/*.dtb 1> /dev/null 2>&1; then
+          if [ -d "files/boot/dtb" ] && ls files/boot/dtb/*.dtb >/dev/null 2>&1; then
             CUSTOM_DTB=$(ls files/boot/dtb/*.dtb | head -1)
-            echo "Found custom DTB: $CUSTOM_DTB"
+            echo "Found DTB: $CUSTOM_DTB"
             cp "$CUSTOM_DTB" /opt/build/
             DTB_NAME=$(basename "$CUSTOM_DTB" .dtb)
-            echo "DTB_NAME=$DTB_NAME" >> $GITHUB_ENV
+            echo "dtb_name=$DTB_NAME" >> $GITHUB_OUTPUT
           else
-            echo "ERROR: No .dtb file found in files/boot/dtb/"
+            echo "ERROR: No .dtb found in files/boot/dtb/"
             exit 1
           fi
 
       - name: Create FIT image (Image.itb) with custom DTB
         working-directory: /opt/build
+        env:
+          DTB_NAME: ${{ steps.dtb.outputs.dtb_name }}
         run: |
-          # 解压内核
           gunzip -c Image.gz > Image
-
-          # 获取 DTB 路径
           CUSTOM_DTB_FILE=$(ls *.dtb | head -1)
 
-          # 生成 ITS
           cat > kernel.its <<EOF
 /dts-v1/;
 
@@ -93,8 +40,8 @@ jobs:
         };
 
         fdt@1 {
-            description = "${{ env.DTB_NAME }}";
-            data = /incbin/("${CUSTOM_DTB_FILE}");
+            description = "$DTB_NAME";   # ← 这里用 shell 变量，不是 GitHub 表达式！
+            data = /incbin/("$CUSTOM_DTB_FILE");
             type = "flat_dt";
             arch = "arm64";
             compression = "none";
@@ -112,30 +59,13 @@ jobs:
 };
 EOF
 
-          # 构建 FIT
           mkimage -f kernel.its Image.itb
 
-          # 准备输出
           mkdir -p output
           cp Image.itb output/
           cp rootfs.tar.gz output/
-          cp "$CUSTOM_DTB_FILE" output/  # 备用
+          cp "$CUSTOM_DTB_FILE" output/
 
           cd output
           sha256sum * > sha256sums
           ls -lh
-
-      - name: Upload to GitHub Release
-        uses: ncipollo/release-action@main
-        with:
-          tag: "OpenWrt_rk3399_custom-dtb_$(date +%Y.%m.%d)"
-          artifacts: "/opt/build/output/*"
-          allowUpdates: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          body: |
-            ### OpenWrt for RK3399 with Custom DTB
-            - **Image.itb**: Kernel + your DTB (from `files/boot/dtb/`)
-            - **rootfs.tar.gz**: Root filesystem
-            - **No U-Boot included** — use your original Android firmware's bootloader
-            - Builder: ${{ inputs.builder_name }}
-            - Default IP: ${{ inputs.openwrt_ip }}

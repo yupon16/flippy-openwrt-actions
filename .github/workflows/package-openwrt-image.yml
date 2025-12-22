@@ -156,6 +156,17 @@ jobs:
           OUTPUT_ROOTFS_EXT4: false   # 可选，设为 true 如果你也想要 ext4
           SKIP_U_BOOT: true
           SKIP_DTB: true              # 不单独打包 .dtb 文件（但内核仍含 DTB）
+          
+      - name: Set environment for artifact upload
+
+        if: ${{ steps.build_openwrt.outcome == 'success' && !cancelled() }}
+
+        run: |
+
+          echo "PACKAGED_STATUS=success" >> $GITHUB_ENV
+
+          echo "PACKAGED_OUTPUTPATH=/opt/openwrt/bin/targets/rockchip/armv8" >> $GITHUB_ENV
+
 
       - name: Upload Artifacts
         uses: ncipollo/release-action@main

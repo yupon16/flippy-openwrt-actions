@@ -43,17 +43,29 @@ jobs:
           fi
           wget -O rootfs.tar.gz "$latest"
 
-      - name: Download flippy kernel (6.6.119)
-        run: |
-          mkdir -p /opt/kernel
-          wget -O /opt/kernel.tar.gz https://github.com/ophub/kernel/releases/download/kernel_flippy/6.6.119.tar.gz
-          tar -xzf /opt/kernel.tar.gz -C /opt/kernel --strip-components=1
-
       - name: Prepare build directory
         run: |
           mkdir -p /opt/build
           cp /opt/download/rootfs.tar.gz /opt/build/
-          cp /opt/kernel/Image.gz /opt/build/
+
+      - name: Download and extract flippy kernel (6.6.119)
+        run: |
+          mkdir -p /opt/kernel
+          wget -O /opt/kernel.tar.gz https://github.com/ophub/kernel/releases/download/kernel_flippy/6.6.119.tar.gz
+          tar -xzf /opt/kernel.tar.gz -C /opt/kernel
+          # Log structure for debugging
+          echo "Kernel archive contents:"
+          find /opt/kernel -type f | sort
+
+      - name: Locate and copy Image.gz
+        run: |
+          IMAGE_GZ=$(find /opt/kernel -name "Image.gz" | head -1)
+          if [ -z "$IMAGE_GZ" ]; then
+            echo "❌ ERROR: Image.gz not found in extracted kernel!"
+            exit 1
+          fi
+          echo "✅ Found Image.gz: $IMAGE_GZ"
+          cp "$IMAGE_GZ" /opt/build/
 
       - name: Use custom DTB from files/boot/dtb
         id: dtb

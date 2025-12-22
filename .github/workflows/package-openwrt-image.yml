@@ -121,12 +121,10 @@ jobs:
 EOF
 
           mkimage -f kernel.its Image.itb
-
-          mkdir - p output || mkdir output
+          mkdir -p output
           cp Image.itb output/
           cp rootfs.tar.gz output/
           cp "$CUSTOM_DTB_FILE" output/
-
           cd output
           sha256sum * > sha256sums
           ls -lh
@@ -141,11 +139,11 @@ EOF
         uses: ncipollo/release-action@v1
         with:
           tag: OpenWrt_rk3399_custom-dtb_$(date +%Y.%m.%d)
-          artifacts: /opt/build/output/*
+          artifacts: "/opt/build/output/*"
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            OpenWrt for RK3399 with custom DTB from \`files/boot/dtb/\`.
+            OpenWrt for RK3399 with custom DTB from `files/boot/dtb/`.
             - Kernel: flippy 6.6.119
             - Rootfs: armsr generic
             - No U-Boot included — use your original Android firmware bootloader.

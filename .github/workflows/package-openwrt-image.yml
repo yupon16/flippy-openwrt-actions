@@ -253,6 +253,48 @@ jobs:
           sudo mkdir -p /tmp/boot
           echo "Mount boot partition..."
           sudo mount -o loop,offset=16777216 "$IMG" /tmp/boot
+          
+          # ========== DTB 存在性补丁开始 ==========
+          echo "================================================="
+          echo "DTB existence check: rk3399-bozz-sw799a.dtb"
+          echo "================================================="
+
+          DTB_SRC="${GITHUB_WORKSPACE}/files/boot/dtb/rockchip/rk3399-bozz-sw799a.dtb"
+          DTB_DST="/tmp/boot/dtb/rockchip/rk3399-bozz-sw799a.dtb"
+
+          # 1. 显示 boot 分区 DTB 目录状态
+          echo "[INFO] List current DTBs in boot partition:"
+          ls -lh /tmp/boot/dtb/rockchip || true
+
+          # 2. 检查目标 DTB 是否已存在
+          if [ -f "${DTB_DST}" ]; then
+              echo "[OK] DTB already exists in boot partition:"
+              ls -lh "${DTB_DST}"
+          else
+              echo "[WARN] DTB not found in boot partition"
+
+              # 3. 检查仓库中是否存在 DTB 源文件
+              if [ ! -f "${DTB_SRC}" ]; then
+                  echo "[ERROR] DTB source file not found in repository:"
+                  echo "        ${DTB_SRC}"
+                  exit 1
+              fi
+
+              echo "[ACTION] Copy DTB from repository into boot partition"
+              cp -v "${DTB_SRC}" "${DTB_DST}"
+
+              sync
+          fi
+
+          # 4. 最终确认
+          echo "[FINAL CHECK]"
+          ls -lh "${DTB_DST}"
+
+          echo "================================================="
+          echo "DTB existence check finished"
+          echo "================================================="
+          # ========== DTB 存在性补丁结束 ==========
+          
           echo "Force fdtfile"
           sudo sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3399-bozz-sw799a.dtb|' /tmp/boot/armbianEnv.txt
           echo "Lock overlay_prefix"

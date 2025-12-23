@@ -1,0 +1,24 @@
+name: Build OpenWrt for zcube1-max
+
+on:
+  workflow_dispatch:  # 只保留手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Package OpenWrt Firmware
+        uses: yupon16/flippy-openwrt-actions@main  # 使用你的仓库
+        env:
+          OPENWRT_ARMSR: openwrt/bin/targets/*/*/*.tar.gz
+          PACKAGE_SOC: all
+          KERNEL_VERSION_NAME: 6.1.y_6.6.y
+          KERNEL_AUTO_LATEST: true
+          OPENWRT_IP: 192.168.1.1
+          CUSTOMIZE_RK3399: "zcube1-max:rk3399-zcube1-max.dtb"  # 只设置zcube1-max
+          GZIP_IMGS: auto

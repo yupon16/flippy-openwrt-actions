@@ -254,7 +254,7 @@ jobs:
           echo "Mount boot partition..."
           sudo mount -o loop,offset=16777216 "$IMG" /tmp/boot
           
-          # ========== DTB 存在性补丁开始 ==========
+          # ========== DTB 存在性补丁开始（已修复权限） ==========
           echo "================================================="
           echo "DTB existence check: rk3399-bozz-sw799a.dtb"
           echo "================================================="
@@ -264,12 +264,12 @@ jobs:
 
           # 1. 显示 boot 分区 DTB 目录状态
           echo "[INFO] List current DTBs in boot partition:"
-          ls -lh /tmp/boot/dtb/rockchip || true
+          sudo ls -lh /tmp/boot/dtb/rockchip || true
 
           # 2. 检查目标 DTB 是否已存在
-          if [ -f "${DTB_DST}" ]; then
+          if sudo [ -f "${DTB_DST}" ]; then
               echo "[OK] DTB already exists in boot partition:"
-              ls -lh "${DTB_DST}"
+              sudo ls -lh "${DTB_DST}"
           else
               echo "[WARN] DTB not found in boot partition"
 
@@ -281,14 +281,14 @@ jobs:
               fi
 
               echo "[ACTION] Copy DTB from repository into boot partition"
-              cp -v "${DTB_SRC}" "${DTB_DST}"
+              sudo cp -v "${DTB_SRC}" "${DTB_DST}"
 
-              sync
+              sudo sync
           fi
 
           # 4. 最终确认
           echo "[FINAL CHECK]"
-          ls -lh "${DTB_DST}"
+          sudo ls -lh "${DTB_DST}"
 
           echo "================================================="
           echo "DTB existence check finished"
@@ -300,11 +300,11 @@ jobs:
           echo "Lock overlay_prefix"
           sudo sed -i 's|^overlay_prefix=.*|overlay_prefix=rk3399|' /tmp/boot/armbianEnv.txt || true
           echo "Verify armbianEnv.txt"
-          grep -E 'fdtfile|overlay_prefix' /tmp/boot/armbianEnv.txt
+          sudo grep -E 'fdtfile|overlay_prefix' /tmp/boot/armbianEnv.txt
           sudo umount /tmp/boot
           echo "Recompress image..."
           sudo gzip -f "$IMG"
-
+          
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main
         if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()

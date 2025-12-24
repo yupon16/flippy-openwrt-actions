@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       kernel_series:
-        description: "Select kernel series"
+        description: "Kernel series"
         required: true
         default: "6.1"
         type: choice
@@ -17,36 +17,27 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # ===== 硬件唯一声明（A 路线核心）=====
-      TARGET_SOC: rk3399
-      TARGET_BOARD: sw799
-      TARGET_DTB: rk3399-bozz-sw799.dtb
+      # ===== packit 工作模式（必须）=====
+      mode: openwrt
 
-      # ===== OpenWrt rootfs（与内核解耦）=====
-      ROOTFS_REPO: ophub/OpenWrt_armv8_rootfs
+      # ===== SoC / 架构声明 =====
+      OPENWRT_ARMSR: rk3399
+
+      # ===== 板级唯一声明（A 路线核心）=====
+      OPENWRT_BOARD: sw799
+      OPENWRT_DTB: rk3399-bozz-sw799.dtb
+
+      # ===== 内核版本选择 =====
+      KERNEL_VERSION: ${{ inputs.kernel_series }}
+
+      # ===== rootfs =====
+      OPENWRT_ROOTFS_REPO: ophub/OpenWrt_armv8_rootfs
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # === 核心步骤：调用 flippy 官方 Actions ===
       - name: Build OpenWrt image for SW799
         uses: ophub/flippy-openwrt-actions@main
         with:
-          # ---- 架构 / SoC ----
-          soc: ${{ env.TARGET_SOC }}
-
-          # ---- 内核版本选择（6.1 / 6.12）----
-          kernel: ${{ inputs.kernel_series }}
-
-          # ---- 强制指定 DTB（作者级关键点）----
-          dtb: ${{ env.TARGET_DTB }}
-
-          # ---- 固定 rootfs ----
-          rootfs: ${{ env.ROOTFS_REPO }}
-
-          # ---- 固件命名（避免“zcube1”语义污染）----
-          board: ${{ env.TARGET_BOARD }}
-
-          # ---- 镜像压缩（可选）----
-          compress: xz
+          mode: ${{ env.mode }}

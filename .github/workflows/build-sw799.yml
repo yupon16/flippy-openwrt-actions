@@ -1,43 +1,96 @@
-name: Build OpenWrt for RK3399 SW799 (Author-grade)
+name: Build OpenWrt SW799 Image
 
 on:
   workflow_dispatch:
     inputs:
-      kernel_series:
-        description: "Kernel series"
+      openwrt_soc:
+        description: "Target SoC"
         required: true
-        default: "6.1"
+        default: "rk3399"
         type: choice
         options:
-          - "6.1"
-          - "6.12"
+          - rk3399
+
+      openwrt_kernel:
+        description: "Kernel version"
+        required: true
+        default: "6.1.y_6.12.y"
+        type: choice
+        options:
+          - 6.1.y
+          - 6.12.y
+          - 6.1.y_6.12.y
+
+      openwrt_branch:
+        description: "OpenWrt branch"
+        required: true
+        default: "openwrt-23.05"
+        type: choice
+        options:
+          - openwrt-23.05
+          - openwrt-22.03
+          - snapshot
+
+      # === A 路线核心：通过 packit 官方入口声明 SW799 ===
+      customize_rk3399:
+        description: "rk3399 board → dtb mapping"
+        required: true
+        default: "sw799:rk3399-bozz-sw799.dtb"
+        type: string
+
+      openwrt_rootfs_size:
+        description: "Rootfs size (MB)"
+        required: true
+        default: "1024"
+        type: string
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      # ===== packit 工作模式（必须）=====
-      mode: openwrt
-
-      # ===== SoC / 架构声明 =====
-      OPENWRT_ARMSR: rk3399
-
-      # ===== 板级唯一声明（A 路线核心）=====
-      OPENWRT_BOARD: sw799
-      OPENWRT_DTB: rk3399-bozz-sw799.dtb
-
-      # ===== 内核版本选择 =====
-      KERNEL_VERSION: ${{ inputs.kernel_series }}
-
-      # ===== rootfs =====
-      OPENWRT_ROOTFS_REPO: ophub/OpenWrt_armv8_rootfs
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build OpenWrt image for SW799
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            coreutils \
+            util-linux \
+            parted \
+            kmod \
+            gawk \
+            wget \
+            curl \
+            tar \
+            gzip \
+            xz-utils \
+            qemu-utils \
+            losetup \
+            uuid-runtime
+
+      - name: Create simulated physical disk
+        run: |
+          sudo mkdir -p /opt
+          sudo truncate -s 20G /opt/disk.img
+          sudo losetup -fP /opt/disk.img
+          sudo losetup -a
+
+      - name: Build OpenWrt image via flippy-openwrt-actions
         uses: ophub/flippy-openwrt-actions@main
+        env:
+          OPENWRT_SOC: ${{ inputs.openwrt_soc }}
+          OPENWRT_KERNEL: ${{ inputs.openwrt_kernel }}
+          OPENWRT_BRANCH: ${{ inputs.openwrt_branch }}
+          CUSTOMIZE_RK3399: ${{ inputs.customize_rk3399 }}
+          ROOTFS_SIZE: ${{ inputs.openwrt_rootfs_size }}
+
+      - name: Upload OpenWrt firmware
+        uses: actions/upload-artifact@v4
         with:
-          mode: ${{ env.mode }}
+          name: openwrt-sw799-${{ inputs.openwrt_kernel }}
+          path: |
+            out/*

@@ -62,19 +62,19 @@ jobs:
           rootfs_url=$(echo "$latest_json" | jq -r '
             [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
             | .[0].assets[]
-            | select(.name | endswith("-rootfs.tar.gz"))
+            | select(.name | contains("armsr-armv8") and endswith("-rootfs.tar.gz"))
             | .url
           ')
 
           rootfs_name=$(echo "$latest_json" | jq -r '
             [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
             | .[0].assets[]
-            | select(.name | endswith("-rootfs.tar.gz"))
+            | select(.name | contains("armsr-armv8") and endswith("-rootfs.tar.gz"))
             | .name
           ')
 
           if [ -z "$rootfs_url" ]; then
-            echo "Failed to find rootfs asset"
+            echo "Failed to find armsr-armv8 rootfs asset"
             exit 1
           fi
 
@@ -85,8 +85,8 @@ jobs:
             "$rootfs_url" \
             -o "opt/download/$rootfs_name"
 
-          ROOTFS_FILE=$(ls -1 opt/download/*rootfs.tar.gz | head -n 1)
-          echo "OPENWRT_ARMSR=$ROOTFS_FILE" >> $GITHUB_ENV
+          echo "OPENWRT_ARMSR=opt/download/$rootfs_name" >> $GITHUB_ENV
+
 
       # ------------------------------------------------------------
       # 3. Package OpenWrt firmware (flippy 官方入口)

@@ -21,23 +21,28 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # 1. 下载 armv8 rootfs（这是你之前 100% 缺失的步骤）
-    - name: Download OpenWrt rootfs
+    - name: Download OpenWrt armsr-armv8 rootfs
       run: |
         set -e
         mkdir -p opt/download
 
         json=$(curl -fsSL https://api.github.com/repos/ophub/flippy-openwrt-actions/releases)
 
-        url=$(echo "$json" | jq -r '
-          [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))][0]
-          .assets[] | select(.name | endswith("-rootfs.tar.gz")) | .url
+        asset=$(echo "$json" | jq -r '
+          [.[] 
+            | select(.tag_name | contains("OpenWrt_armv8_rootfs"))
+            | .assets[]
+            | select(.name | contains("armsr-armv8") and endswith("-rootfs.tar.gz"))
+          ][0]
         ')
 
-        name=$(echo "$json" | jq -r '
-          [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))][0]
-          .assets[] | select(.name | endswith("-rootfs.tar.gz")) | .name
-        ')
+        url=$(echo "$asset" | jq -r '.url')
+        name=$(echo "$asset" | jq -r '.name')
+
+        if [ -z "$url" ] || [ "$url" = "null" ]; then
+          echo "[FATAL] armsr-armv8 rootfs not found"
+          exit 1
+        fi
 
         echo "Downloading $name"
         curl -L \
@@ -46,6 +51,7 @@ jobs:
           -o "opt/download/$name"
 
         echo "OPENWRT_ARMSR=opt/download/$name" >> $GITHUB_ENV
+
 
     # 2. 使用 flippy 正常打 zcube1-max 包
     - name: Build OpenWrt zcube1-max

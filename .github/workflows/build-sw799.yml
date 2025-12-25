@@ -1,7 +1,3 @@
-#==========================================================================
-# Build OpenWrt zcube1-max (A 路线，DTB=rk3399-bozz-sw799)
-#==========================================================================
-
 name: Build OpenWrt zcube1-max (A Route)
 
 on:
@@ -10,110 +6,89 @@ on:
       openwrt_kernel:
         description: "Select kernel version"
         required: true
-        default: "6.1.y_6.12.y"
+        default: "6.12.y"
         type: choice
         options:
+          - 5.10.y
+          - 5.15.y
           - 6.1.y
+          - 6.6.y
           - 6.12.y
-          - 6.1.y_6.12.y
-
-env:
-  TZ: Etc/UTC
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
-      # 1. 初始化环境
-      # ------------------------------------------------------------
-      - name: Initialization environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo swapoff -a || true
-          sudo apt-get update
-          sudo apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-make-openwrt-depends)
-          sudo apt-get -y autoremove --purge
-          sudo apt-get clean
-          sudo timedatectl set-timezone "${TZ}"
-          date
+    # 1. 使用 flippy 原生方式打 zcube1-max
+    - name: Build OpenWrt (zcube1-max)
+      uses: ophub/flippy-openwrt-actions@main
+      env:
+        PACKAGE_SOC: zcube1-max
+        KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
 
-      # ------------------------------------------------------------
-      # 2. 下载通用 armsr-armv8 rootfs
-      # ------------------------------------------------------------
-      - name: Download OpenWrt rootfs
-        run: |
-          mkdir -p opt/download
+    # 2. 定位生成的固件
+    - name: Locate firmware
+      run: |
+        set -e
+        IMAGE=$(ls out/openwrt_*zcube1-max*.img.gz | head -n 1)
+        echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-          latest_json=$(curl -s \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/repos/ophub/flippy-openwrt-actions/releases?per_page=20)
+    # 3. 解压镜像
+    - name: Unpack firmware
+      run: |
+        mkdir work
+        gzip -dc "$IMAGE" > work/openwrt.img
 
-          rootfs_url=$(echo "$latest_json" | jq -r '
-            [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
-            | .[0].assets[]
-            | select(.name | contains("armsr-armv8") and endswith("-rootfs.tar.gz"))
-            | .url
-          ')
+    # 4. 挂载 + 自动补丁（A Route 核心）
+    - name: Patch fdtfile (A Route)
+      run: |
+        set -e
 
-          rootfs_name=$(echo "$latest_json" | jq -r '
-            [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
-            | .[0].assets[]
-            | select(.name | contains("armsr-armv8") and endswith("-rootfs.tar.gz"))
-            | .name
-          ')
+        sudo losetup -Pf work/openwrt.img
+        LOOP=$(losetup -a | grep openwrt.img | cut -d: -f1)
 
-          if [ -z "$rootfs_url" ]; then
-            echo "Failed to find armsr-armv8 rootfs asset"
-            exit 1
-          fi
+        sudo mkdir -p /mnt/openwrt
+        sudo mount ${LOOP}p1 /mnt/openwrt || sudo mount ${LOOP}p2 /mnt/openwrt
 
-          echo "Downloading $rootfs_name"
-          curl -L \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "$rootfs_url" \
-            -o "opt/download/$rootfs_name"
+        echo "[INFO] Checking DTB existence..."
+        if [ ! -f /mnt/openwrt/dtb/rockchip/rk3399-bozz-sw799.dtb ]; then
+          echo "[FATAL] rk3399-bozz-sw799.dtb not found in image"
+          exit 1
+        fi
 
-          echo "OPENWRT_ARMSR=opt/download/$rootfs_name" >> $GITHUB_ENV
+        echo "[INFO] Patching fdtfile..."
 
-      # ------------------------------------------------------------
-      # 3. Package OpenWrt 镜像
-      # ------------------------------------------------------------
-      - name: Package OpenWrt Firmware
-        uses: ophub/flippy-openwrt-actions@main
-        env:
-          OPENWRT_ARMSR: ${{ env.OPENWRT_ARMSR }}
-          PACKAGE_SOC: zcube1-max
-          KERNEL_REPO_URL: breakingbadboy/OpenWrt
-          KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
-          KERNEL_AUTO_LATEST: true
-          CUSTOMIZE_RK3399: zcube1-max:rk3399-bozz-sw799.dtb
-          OPENWRT_IP: 192.168.1.1
-          WHOAMI: zcube1-max
+        # armbianEnv.txt
+        if [ -f /mnt/openwrt/armbianEnv.txt ]; then
+          sudo sed -i 's/^fdtfile=.*/fdtfile=rk3399-bozz-sw799.dtb/' /mnt/openwrt/armbianEnv.txt
+          echo "[OK] armbianEnv.txt patched"
+        fi
 
-      # ------------------------------------------------------------
-      # 4. 上传到 Release
-      # ------------------------------------------------------------
-      - name: Upload OpenWrt Firmware
-        uses: ncipollo/release-action@v1
-        if: ${{ env.PACKAGED_STATUS }} == 'success'
-        with:
-          tag: OpenWrt_zcube1-max_${{ inputs.openwrt_kernel }}_${{ github.run_number }}
-          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
-          allowUpdates: true
-          makeLatest: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          body: |
-            ### OpenWrt zcube1-max Firmware
-            - SoC: rk3399
-            - DTB: rk3399-bozz-sw799.dtb
-            - Kernel: ${{ inputs.openwrt_kernel }}
-            - Default IP: 192.168.1.1
-            - User: root / password
+        # extlinux.conf
+        if [ -f /mnt/openwrt/extlinux/extlinux.conf ]; then
+          sudo sed -i 's|FDT .*|FDT /dtb/rockchip/rk3399-bozz-sw799.dtb|' /mnt/openwrt/extlinux/extlinux.conf
+          echo "[OK] extlinux.conf patched"
+        fi
+
+        sync
+        sudo umount /mnt/openwrt
+        sudo losetup -d $LOOP
+
+    # 5. 重新压缩并标注 A-Route
+    - name: Repack firmware
+      run: |
+        gzip -9 work/openwrt.img
+        mkdir -p final
+        mv work/openwrt.img.gz \
+           final/openwrt_zcube1-max_${{ inputs.openwrt_kernel }}_A-Route.img.gz
+
+    # 6. 发布
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: openwrt-zcube1-max-A-Route
+        path: final/*.img.gz

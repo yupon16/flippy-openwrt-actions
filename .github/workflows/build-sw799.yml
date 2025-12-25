@@ -1,23 +1,22 @@
 #==========================================================================
-# Description: Package OpenWrt image
+# Description: Package OpenWrt image for Zcube1-Max with SW799 DTB
 # Copyright (C) 2021 https://github.com/unifreq/openwrt_packit
 # Copyright (C) 2021 https://github.com/ophub/flippy-openwrt-actions
+# Copyright (C) 2025 https://github.com/yupon16/flippy-openwrt-actions
 #==========================================================================
 
-name: Package OpenWrt image
+name: Build OpenWrt for Zcube1-Max (SW799 DTB)
 
 on:
-  repository_dispatch:
   workflow_dispatch:
     inputs:
       openwrt_soc:
-        description: "Select device board."
+        description: "Device board (use rk3399 for SW799 variant)"
         required: false
-        default: "all"
+        default: "rk3399"
         type: choice
         options:
-          - all
-          - zcube1-max  # 只保留这个，其他删除
+          - rk3399
       openwrt_ip:
         description: "Set OpenWrt default IP address"
         required: false
@@ -62,12 +61,10 @@ on:
       builder_name:
         description: "Set OpenWrt builder signature."
         required: false
-        default: "ophub"
+        default: "yupon16"
         type: choice
         options:
-          - ophub
-          - angel
-          - yourname
+          - yupon16
 
 env:
   TZ: Etc/UTC
@@ -158,7 +155,7 @@ jobs:
 
           # Get URL and filename separately
           latest_url="$(echo ${latest_version} | jq -r '.url')"
-          openwrt_filename="$(echo ${latest_version} | jq -r '.name')"
+          openwrt_filename="$(echo ${latest_version} | jq -r '.name")"
 
           # Download using API method (add octet-stream header)
           echo "Downloading: ${openwrt_filename}"
@@ -182,64 +179,80 @@ jobs:
           KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
           KERNEL_AUTO_LATEST: ${{ inputs.auto_kernel }}
           OPENWRT_IP: ${{ inputs.openwrt_ip }}
-          CUSTOMIZE_RK3399: "sw799:rk3399-bozz-sw799.dtb"  # 固定使用这个DTB
+          CUSTOMIZE_RK3399: "sw799:rk3399-bozz-sw799.dtb"  # 固定使用sw799 DTB
           WHOAMI: ${{ inputs.builder_name }}
 
-      - name: Force DTB for SW799 (minimal patch)
+      - name: Verify and Ensure SW799 DTB Configuration
         if: ${{ env.PACKAGED_STATUS }} == 'success' && !cancelled()
         run: |
           set -e
-          echo "List output files:"
+          echo "=== 验证和确保SW799 DTB配置 ==="
+          
+          # 查找生成的sw799固件
+          echo "查找输出文件..."
           ls -lh "${PACKAGED_OUTPUTPATH}"
-          echo "Locate img.gz..."
-          IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*.img.gz | head -n1)
-          echo "Using compressed image: $IMG_GZ"
-          echo "Decompress image..."
-          sudo gunzip -k "$IMG_GZ"
-          IMG="${IMG_GZ%.gz}"
-          echo "Decompressed image: $IMG"
-          sudo mkdir -p /tmp/boot
-          echo "Mount boot partition..."
-          sudo mount -o loop,offset=16777216 "$IMG" /tmp/boot
           
-          # ========== DTB 存在性检查 ==========
-          echo "================================================="
-          echo "检查镜像中的DTB文件"
-          echo "================================================="
-
-          # 检查镜像中是否包含所需的DTB文件
-          echo "[INFO] 镜像中的DTB文件列表:"
-          sudo ls -lh /tmp/boot/dtb/rockchip/ || true
+          # 首先查找sw799固件
+          IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*sw799*.img.gz 2>/dev/null | head -n1)
           
-          # 检查是否有rk3399-bozz-sw799.dtb
-          if sudo [ -f "/tmp/boot/dtb/rockchip/rk3399-bozz-sw799.dtb" ]; then
-              echo "[OK] 镜像中已包含 rk3399-bozz-sw799.dtb"
-          else
-              echo "[WARN] 镜像中未找到 rk3399-bozz-sw799.dtb"
-              echo "当前可用的rk3399 DTB文件:"
-              sudo ls /tmp/boot/dtb/rockchip/*rk3399*.dtb 2>/dev/null || echo "未找到rk3399 DTB"
+          # 如果没有找到sw799固件，查找其他rk3399固件
+          if [ -z "$IMG_GZ" ]; then
+            echo "未找到sw799固件，查找其他rk3399固件..."
+            IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*rk3399*.img.gz 2>/dev/null | head -n1)
           fi
           
-          echo "================================================="
-          echo "DTB检查完成"
-          echo "================================================="
+          if [ -z "$IMG_GZ" ]; then
+            echo "未找到rk3399固件，使用第一个找到的固件"
+            IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*.img.gz | head -n1)
+          fi
+          
+          if [ -z "$IMG_GZ" ]; then
+            echo "错误: 未找到任何固件文件"
+            exit 1
+          fi
+          
+          echo "处理固件: $IMG_GZ"
+          
+          # 解压缩
+          echo "解压固件..."
+          sudo gunzip -k "$IMG_GZ"
+          IMG="${IMG_GZ%.gz}"
+          
+          # 挂载boot分区
+          echo "挂载boot分区..."
+          sudo mkdir -p /tmp/boot
+          sudo mount -o loop,offset=16777216 "$IMG" /tmp/boot
+          
+          # 检查DTB文件
+          echo "检查DTB文件..."
+          if [ -f "/tmp/boot/dtb/rockchip/rk3399-bozz-sw799.dtb" ]; then
+            echo "✅ DTB文件存在: rk3399-bozz-sw799.dtb"
+          else
+            echo "⚠️  警告: DTB文件 rk3399-bozz-sw799.dtb 不存在"
+            echo "可用的rk3399 DTB文件:"
+            sudo ls /tmp/boot/dtb/rockchip/*rk3399*.dtb 2>/dev/null || echo "无rk3399 DTB文件"
+          fi
           
           # 强制设置fdtfile为rk3399-bozz-sw799.dtb
-          echo "强制设置fdtfile为rk3399-bozz-sw799.dtb"
+          echo "设置fdtfile为rk3399-bozz-sw799.dtb..."
           sudo sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3399-bozz-sw799.dtb|' /tmp/boot/armbianEnv.txt
           
-          # 锁定overlay_prefix为rk3399
-          echo "锁定overlay_prefix"
+          # 设置overlay_prefix为rk3399
+          echo "设置overlay_prefix..."
           sudo sed -i 's|^overlay_prefix=.*|overlay_prefix=rk3399|' /tmp/boot/armbianEnv.txt || true
           
-          # 验证修改
-          echo "验证armbianEnv.txt修改:"
+          # 验证配置
+          echo "验证配置:"
           sudo grep -E 'fdtfile|overlay_prefix' /tmp/boot/armbianEnv.txt
           
           # 卸载并重新压缩
           sudo umount /tmp/boot
-          echo "重新压缩镜像..."
+          sudo rm -rf /tmp/boot
+          
+          echo "重新压缩固件..."
           sudo gzip -f "$IMG"
+          
+          echo "=== SW799 DTB配置验证完成 ==="
 
       - name: Upload OpenWrt Firmware to Release
         uses: ncipollo/release-action@main
@@ -253,16 +266,36 @@ jobs:
           makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ### OpenWrt Image information
-            - Default IP: 192.168.1.1
-            - Default username: root
-            - Default password: password
-            - Default WIFI name: OpenWrt
-            - Default WIFI password: none
-            ### Install to EMMC
-            - Login to OpenWrt → System → Amlogic Service → Install OpenWrt
-            ### OpenWrt source code
-            - [coolsnowwolf/lede](https://github.com/coolsnowwolf/lede)
-            - The OpenWrt [rootfs and kernel](https://github.com/ophub/flippy-openwrt-actions/releases/tag/OpenWrt_armv8_rootfs) files are both shared by [flippy](https://github.com/unifreq/openwrt_packit).
-            ### OpenWrt Image Verification
-            - sha256sum
+            ### OpenWrt Image for Zcube1-Max (SW799 DTB)
+            
+            **专为Zcube1-Max设备定制的OpenWrt固件**
+            
+            #### 固件信息
+            - **设备兼容**: Zcube1-Max (使用SW799 DTB)
+            - **默认IP**: ${{ inputs.openwrt_ip }}
+            - **用户名**: root
+            - **密码**: password
+            - **内核版本**: 根据选择的版本自动构建
+            - **DTB配置**: rk3399-bozz-sw799.dtb (强制设置)
+            
+            #### 已验证的组合
+            - ✅ rk3399-bozz-sw799.dtb + 6.12.62-flippy-94+ 内核
+            
+            #### 安装说明
+            1. 将固件写入SD卡或U盘
+            2. 从SD卡/U盘启动OpenWrt
+            3. 登录OpenWrt → 系统 → Amlogic Service → Install OpenWrt
+            
+            #### 注意事项
+            - 此固件专门为Zcube1-Max设备配置了SW799 DTB
+            - 确保DTB配置正确：fdtfile=rockchip/rk3399-bozz-sw799.dtb
+            
+            #### 固件验证
+            ```bash
+            sha256sum *.img.gz
+            ```
+            
+            #### 构建信息
+            - 构建时间: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            - 构建者: ${{ inputs.builder_name }}
+            - 配置: 专为Zcube1-Max定制的SW799 DTB固件

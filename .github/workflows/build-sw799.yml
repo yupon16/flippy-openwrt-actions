@@ -15,9 +15,13 @@ on:
           - 6.6.y
           - 6.12.y
       openwrt_ip:
-        description: "Set OpenWrt default IP address"
+        description: "OpenWrt default IP"
         required: false
         default: "192.168.1.1"
+      builder_name:
+        description: "Builder signature"
+        required: false
+        default: "ophub"
 
 env:
   TZ: Etc/UTC
@@ -26,6 +30,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -47,15 +52,13 @@ jobs:
 
       - name: Download zcube1-max rootfs
         run: |
+          set -e
           mkdir -p opt/download
           json=$(curl -fsSL https://api.github.com/repos/ophub/flippy-openwrt-actions/releases)
-          url=$(echo "$json" | jq -r '
-            .[] | select(.tag_name | contains("OpenWrt_armv8_rootfs")) 
-            | .assets[] 
-            | select(.name | contains("zcube1-max") and endswith("-rootfs.tar.gz")) 
-            | .browser_download_url
-          ' | head -n1)
-          if [ -z "$url" ]; then
+          echo "[INFO] Available assets for OpenWrt_armv8_rootfs:"
+          echo "$json" | jq -r '.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs")) | .assets[].name'
+          url=$(echo "$json" | jq -r '.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs")) | .assets[] | select(.name | test("armv8.*zcube1-max.*rootfs\\.tar\\.gz")) | .browser_download_url' | head -n1)
+          if [ -z "$url" ] || [ "$url" = "null" ]; then
             echo "[FATAL] Cannot locate zcube1-max rootfs asset"
             exit 1
           fi
@@ -63,20 +66,21 @@ jobs:
           echo "[INFO] Downloading $name"
           curl -L "$url" -o "opt/download/$name"
           echo "OPENWRT_ARMSR=$PWD/opt/download/$name" >> $GITHUB_ENV
+          shell: /usr/bin/bash -e
 
       - name: Package OpenWrt Firmware
         uses: ophub/flippy-openwrt-actions@main
         env:
           OPENWRT_ARMSR: ${{ env.OPENWRT_ARMSR }}
           PACKAGE_SOC: zcube1-max
+          KERNEL_REPO_URL: breakingbadboy/OpenWrt
           KERNEL_VERSION_NAME: ${{ github.event.inputs.openwrt_kernel }}
           OPENWRT_IP: ${{ github.event.inputs.openwrt_ip }}
-          WHOAMI: ophub
+          WHOAMI: ${{ github.event.inputs.builder_name }}
 
-      - name: Patch A-Route DTB
+      - name: Patch DTB to A-Route
         run: |
           set -e
-          echo "[INFO] Locate firmware image"
           IMG=$(ls ${PACKAGED_OUTPUTPATH}/openwrt_*zcube1-max*.img.gz | head -n1)
           if [ -z "$IMG" ]; then
             echo "[FATAL] zcube1-max image not found"
@@ -104,12 +108,18 @@ jobs:
           echo "[INFO] Repack A-Route image"
           gzip -9 openwrt.img
           mv openwrt.img.gz ${PACKAGED_OUTPUTPATH}/openwrt_zcube1-max_A-Route.img.gz
-          echo "[INFO] Finished: ${PACKAGED_OUTPUTPATH}/openwrt_zcube1-max_A-Route.img.gz"
+          shell: /usr/bin/bash -e
 
       - name: Upload OpenWrt Firmware to Release
-        uses: ncipollo/release-action@main
+        uses: ncipollo/release-action@v2
         with:
-          tag: OpenWrt_zcube1-max_A-Route
-          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/openwrt_zcube1-max_A-Route.img.gz
+          tag: OpenWrt_armv8_A-Route
+          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
           allowUpdates: true
           makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ### OpenWrt zcube1-max A-Route
+            - Default IP: ${{ github.event.inputs.openwrt_ip }}
+            - Default username: root
+            - Default password: password

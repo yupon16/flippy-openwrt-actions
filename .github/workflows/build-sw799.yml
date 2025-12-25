@@ -63,35 +63,49 @@ jobs:
 
     # 3. 解包并执行 A Route 补丁
     - name: Patch fdtfile (A Route)
+      if: ${{ env.PACKAGED_STATUS }} == 'success'
       run: |
         set -e
-        IMG=$(ls out/openwrt_*zcube1-max*.img.gz | head -n1)
+
+        echo "[INFO] Locate firmware image"
+        IMG=$(ls ${PACKAGED_OUTPUTPATH}/openwrt_*zcube1-max*.img.gz | head -n 1)
+
+        if [ -z "$IMG" ]; then
+          echo "[FATAL] zcube1-max image not found"
+          exit 1
+        fi
+
+        echo "[INFO] Unpacking $IMG"
         gzip -dc "$IMG" > openwrt.img
 
         sudo losetup -Pf openwrt.img
         LOOP=$(losetup -a | grep openwrt.img | cut -d: -f1)
 
-        sudo mount ${LOOP}p1 /mnt || sudo mount ${LOOP}p2 /mnt
+        sudo mkdir -p /mnt/openwrt
+        sudo mount ${LOOP}p1 /mnt/openwrt || sudo mount ${LOOP}p2 /mnt/openwrt
 
-        # 校验 DTB
-        test -f /mnt/dtb/rockchip/rk3399-bozz-sw799.dtb
+        echo "[INFO] Verify DTB existence"
+        test -f /mnt/openwrt/dtb/rockchip/rk3399-bozz-sw799.dtb
 
-        # armbianEnv
-        if [ -f /mnt/armbianEnv.txt ]; then
-          sudo sed -i 's/^fdtfile=.*/fdtfile=rk3399-bozz-sw799.dtb/' /mnt/armbianEnv.txt
+        echo "[INFO] Patch armbianEnv.txt if exists"
+        if [ -f /mnt/openwrt/armbianEnv.txt ]; then
+          sudo sed -i 's/^fdtfile=.*/fdtfile=rk3399-bozz-sw799.dtb/' /mnt/openwrt/armbianEnv.txt
         fi
 
-        # extlinux
-        if [ -f /mnt/extlinux/extlinux.conf ]; then
-          sudo sed -i 's|FDT .*|FDT /dtb/rockchip/rk3399-bozz-sw799.dtb|' /mnt/extlinux/extlinux.conf
+        echo "[INFO] Patch extlinux.conf if exists"
+        if [ -f /mnt/openwrt/extlinux/extlinux.conf ]; then
+          sudo sed -i 's|FDT .*|FDT /dtb/rockchip/rk3399-bozz-sw799.dtb|' /mnt/openwrt/extlinux/extlinux.conf
         fi
 
         sync
-        sudo umount /mnt
+        sudo umount /mnt/openwrt
         sudo losetup -d $LOOP
 
+        echo "[INFO] Repack A-Route image"
         gzip -9 openwrt.img
-        mv openwrt.img.gz openwrt_zcube1-max_A-Route.img.gz
+        mv openwrt.img.gz \
+           ${PACKAGED_OUTPUTPATH}/openwrt_zcube1-max_A-Route.img.gz
+
 
     # 4. 发布
     - name: Upload A-Route firmware

@@ -99,7 +99,90 @@ jobs:
           WHOAMI: zcube1-max
 
       # ------------------------------------------------------------
-      # 4. 上传到 Release
+      # 4. 修改镜像中的 armbianEnv.txt 文件（新增步骤）
+      # ------------------------------------------------------------
+      - name: Modify armbianEnv.txt in firmware image
+        if: ${{ env.PACKAGED_STATUS }} == 'success'
+        run: |
+          echo "开始修改镜像中的 armbianEnv.txt 文件..."
+          
+          # 安装必要的工具
+          sudo apt-get update
+          sudo apt-get install -y kpartx util-linux mount
+          
+          # 查找打包生成的镜像文件
+          IMAGE_FILE=$(find ${{ env.PACKAGED_OUTPUTPATH }} -name "*.img" | head -1)
+          
+          if [ -z "$IMAGE_FILE" ]; then
+            echo "错误：未找到镜像文件"
+            exit 1
+          fi
+          
+          echo "找到镜像文件: $IMAGE_FILE"
+          
+          # 创建挂载点
+          MOUNT_POINT="/mnt/openwrt_boot"
+          sudo mkdir -p $MOUNT_POINT
+          
+          # 使用 kpartx 创建设备映射
+          LOOP_DEVICE=$(sudo losetup -f --show -P "$IMAGE_FILE")
+          echo "创建回环设备: $LOOP_DEVICE"
+          
+          # 等待分区设备出现
+          sleep 2
+          
+          # 查找 boot 分区（通常是第一个分区）
+          BOOT_PARTITION="${LOOP_DEVICE}p1"
+          if [ ! -b "$BOOT_PARTITION" ]; then
+            echo "错误：找不到 boot 分区"
+            sudo losetup -d $LOOP_DEVICE
+            exit 1
+          fi
+          
+          echo "挂载 boot 分区: $BOOT_PARTITION"
+          sudo mount "$BOOT_PARTITION" "$MOUNT_POINT"
+          
+          # 检查并修改 armbianEnv.txt
+          ARMBIAN_ENV_FILE="$MOUNT_POINT/armbianEnv.txt"
+          if [ -f "$ARMBIAN_ENV_FILE" ]; then
+            echo "找到 armbianEnv.txt 文件"
+            
+            # 备份原文件
+            sudo cp "$ARMBIAN_ENV_FILE" "${ARMBIAN_ENV_FILE}.backup"
+            
+            # 修改 dtb 参数为 rk3399-bozz-sw799.dtb
+            if sudo grep -q "fdtfile=" "$ARMBIAN_ENV_FILE"; then
+              echo "修改现有的 fdtfile 参数"
+              sudo sed -i 's|^fdtfile=.*|fdtfile=rk3399-bozz-sw799.dtb|' "$ARMBIAN_ENV_FILE"
+            else
+              echo "添加 fdtfile 参数"
+              echo "fdtfile=rk3399-bozz-sw799.dtb" | sudo tee -a "$ARMBIAN_ENV_FILE" > /dev/null
+            fi
+            
+            # 确认修改
+            echo "修改后的 armbianEnv.txt 内容："
+            sudo cat "$ARMBIAN_ENV_FILE"
+          else
+            echo "警告：未找到 armbianEnv.txt 文件，创建一个新的"
+            echo "fdtfile=rk3399-bozz-sw799.dtb" | sudo tee "$ARMBIAN_ENV_FILE" > /dev/null
+            echo "extraargs=root=UUID=60b08fb9-eab0-4c7e-9f8a-92ea4f1c8c0e rootwait rootfstype=ext4" | sudo tee -a "$ARMBIAN_ENV_FILE" > /dev/null
+          fi
+          
+          # 卸载并清理
+          echo "卸载分区..."
+          sudo umount "$MOUNT_POINT"
+          sudo losetup -d "$LOOP_DEVICE"
+          
+          # 如果需要，重新计算镜像的 MD5
+          if [ -f "${IMAGE_FILE}.md5" ]; then
+            echo "更新 MD5 校验文件..."
+            md5sum "$IMAGE_FILE" | cut -d ' ' -f1 > "${IMAGE_FILE}.md5"
+          fi
+          
+          echo "armbianEnv.txt 修改完成！"
+
+      # ------------------------------------------------------------
+      # 5. 上传到 Release
       # ------------------------------------------------------------
       - name: Upload OpenWrt Firmware
         uses: ncipollo/release-action@v1

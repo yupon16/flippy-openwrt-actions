@@ -69,7 +69,6 @@ jobs:
             gzip \
             xz-utils \
             qemu-utils \
-            losetup \
             uuid-runtime
 
       - name: Create simulated physical disk

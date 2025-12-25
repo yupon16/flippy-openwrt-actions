@@ -1,18 +1,15 @@
-name: Build OpenWrt SW799 Image
+#==========================================================================
+# Description: Package OpenWrt image (SW799 · A 路线 · 最小修改版)
+# Base: ophub / unifreq official workflow
+#==========================================================================
+
+name: Build OpenWrt SW799 (A Route)
 
 on:
   workflow_dispatch:
     inputs:
-      openwrt_soc:
-        description: "Target SoC"
-        required: true
-        default: "rk3399"
-        type: choice
-        options:
-          - rk3399
-
       openwrt_kernel:
-        description: "Kernel version"
+        description: "Select kernel version"
         required: true
         default: "6.1.y_6.12.y"
         type: choice
@@ -21,75 +18,116 @@ on:
           - 6.12.y
           - 6.1.y_6.12.y
 
-      openwrt_branch:
-        description: "OpenWrt branch"
-        required: true
-        default: "openwrt-23.05"
-        type: choice
-        options:
-          - openwrt-23.05
-          - openwrt-22.03
-          - snapshot
-
-      # === A 路线核心：通过 packit 官方入口声明 SW799 ===
-      customize_rk3399:
-        description: "rk3399 board → dtb mapping"
-        required: true
-        default: "sw799:rk3399-bozz-sw799.dtb"
-        type: string
-
-      openwrt_rootfs_size:
-        description: "Rootfs size (MB)"
-        required: true
-        default: "1024"
-        type: string
+env:
+  TZ: Etc/UTC
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
+      # ------------------------------------------------------------
+      # 1. Initialize build environment (官方原版逻辑)
+      # ------------------------------------------------------------
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          docker rmi -f $(docker images -q) 2>/dev/null || true
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
           sudo apt-get update
-          sudo apt-get install -y \
-            coreutils \
-            util-linux \
-            parted \
-            kmod \
-            gawk \
-            wget \
-            curl \
-            tar \
-            gzip \
-            xz-utils \
-            qemu-utils \
-            uuid-runtime
+          sudo apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
+          sudo apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-make-openwrt-depends)
+          sudo apt-get -y autoremove --purge
+          sudo apt-get clean
+          sudo timedatectl set-timezone "${TZ}"
+          date
 
-      - name: Create simulated physical disk
+      # ------------------------------------------------------------
+      # 2. Download OpenWrt armv8 rootfs  （关键步骤）
+      # ------------------------------------------------------------
+      - name: Download OpenWrt rootfs
         run: |
-          sudo mkdir -p /opt
-          sudo truncate -s 20G /opt/disk.img
-          sudo losetup -fP /opt/disk.img
-          sudo losetup -a
+          mkdir -p opt/download
 
-      - name: Build OpenWrt image via flippy-openwrt-actions
+          latest_json=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/ophub/flippy-openwrt-actions/releases?per_page=20)
+
+          rootfs_url=$(echo "$latest_json" | jq -r '
+            [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
+            | .[0].assets[]
+            | select(.name | endswith("-rootfs.tar.gz"))
+            | .url
+          ')
+
+          rootfs_name=$(echo "$latest_json" | jq -r '
+            [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
+            | .[0].assets[]
+            | select(.name | endswith("-rootfs.tar.gz"))
+            | .name
+          ')
+
+          if [ -z "$rootfs_url" ]; then
+            echo "Failed to find rootfs asset"
+            exit 1
+          fi
+
+          echo "Downloading $rootfs_name"
+          curl -L \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            "$rootfs_url" \
+            -o "opt/download/$rootfs_name"
+
+          ROOTFS_FILE=$(ls -1 opt/download/*rootfs.tar.gz | head -n 1)
+          echo "OPENWRT_ARMSR=$ROOTFS_FILE" >> $GITHUB_ENV
+
+      # ------------------------------------------------------------
+      # 3. Package OpenWrt firmware (flippy 官方入口)
+      # ------------------------------------------------------------
+      - name: Package OpenWrt Firmware (SW799)
         uses: ophub/flippy-openwrt-actions@main
         env:
-          OPENWRT_SOC: ${{ inputs.openwrt_soc }}
-          OPENWRT_KERNEL: ${{ inputs.openwrt_kernel }}
-          OPENWRT_BRANCH: ${{ inputs.openwrt_branch }}
-          CUSTOMIZE_RK3399: ${{ inputs.customize_rk3399 }}
-          ROOTFS_SIZE: ${{ inputs.openwrt_rootfs_size }}
+          # 必须：真实、已解析的 rootfs 文件
+          OPENWRT_ARMSR: ${{ env.OPENWRT_ARMSR }}
 
-      - name: Upload OpenWrt firmware
-        uses: actions/upload-artifact@v4
+          # 只打 rk3399
+          PACKAGE_SOC: rk3399
+
+          # kernel 选择
+          KERNEL_REPO_URL: breakingbadboy/OpenWrt
+          KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
+          KERNEL_AUTO_LATEST: true
+
+          # SW799 专用 DTB 绑定（A 路线标准做法）
+          CUSTOMIZE_RK3399: sw799:rk3399-bozz-sw799.dtb
+
+          # 基础信息
+          OPENWRT_IP: 192.168.1.1
+          WHOAMI: sw799
+
+      # ------------------------------------------------------------
+      # 4. Upload firmware to GitHub Release
+      # ------------------------------------------------------------
+      - name: Upload OpenWrt Firmware
+        uses: ncipollo/release-action@v1
+        if: ${{ env.PACKAGED_STATUS }} == 'success'
         with:
-          name: openwrt-sw799-${{ inputs.openwrt_kernel }}
-          path: |
-            out/*
+          tag: OpenWrt_SW799_${{ inputs.openwrt_kernel }}_${{ github.run_number }}
+          artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
+          allowUpdates: true
+          makeLatest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ### OpenWrt SW799 Firmware
+            - SoC: rk3399
+            - DTB: rk3399-bozz-sw799.dtb
+            - Kernel: ${{ inputs.openwrt_kernel }}
+            - Default IP: 192.168.1.1
+            - User: root / password

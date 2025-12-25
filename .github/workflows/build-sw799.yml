@@ -26,9 +26,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
-
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Initialization environment
@@ -41,7 +40,6 @@ jobs:
           sudo apt-get update
           sudo apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
           sudo apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-make-openwrt-depends)
-          sudo apt-get -y install jq p7zip-full gzip xfsprogs pv util-linux
           sudo apt-get -y autoremove --purge
           sudo apt-get clean
           sudo timedatectl set-timezone "${TZ}"
@@ -52,9 +50,11 @@ jobs:
           mkdir -p opt/download
           json=$(curl -fsSL https://api.github.com/repos/ophub/flippy-openwrt-actions/releases)
           url=$(echo "$json" | jq -r '
-            [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))][0]
-            .assets[] | select(.name | contains("zcube1-max") and endswith("-rootfs.tar.gz")) | .browser_download_url
-          ')
+            .[] | select(.tag_name | contains("OpenWrt_armv8_rootfs")) 
+            | .assets[] 
+            | select(.name | contains("zcube1-max") and endswith("-rootfs.tar.gz")) 
+            | .browser_download_url
+          ' | head -n1)
           if [ -z "$url" ]; then
             echo "[FATAL] Cannot locate zcube1-max rootfs asset"
             exit 1
@@ -64,58 +64,52 @@ jobs:
           curl -L "$url" -o "opt/download/$name"
           echo "OPENWRT_ARMSR=$PWD/opt/download/$name" >> $GITHUB_ENV
 
-      - name: Build OpenWrt Firmware
+      - name: Package OpenWrt Firmware
         uses: ophub/flippy-openwrt-actions@main
         env:
           OPENWRT_ARMSR: ${{ env.OPENWRT_ARMSR }}
           PACKAGE_SOC: zcube1-max
           KERNEL_VERSION_NAME: ${{ github.event.inputs.openwrt_kernel }}
           OPENWRT_IP: ${{ github.event.inputs.openwrt_ip }}
+          WHOAMI: ophub
 
-      - name: Patch A-Route image (fdtfile & DTB check)
+      - name: Patch A-Route DTB
         run: |
           set -e
           echo "[INFO] Locate firmware image"
-          IMG=$(ls ${PACKAGED_OUTPUTPATH}/openwrt_*zcube1-max*.img.gz | head -n 1)
+          IMG=$(ls ${PACKAGED_OUTPUTPATH}/openwrt_*zcube1-max*.img.gz | head -n1)
           if [ -z "$IMG" ]; then
             echo "[FATAL] zcube1-max image not found"
             exit 1
           fi
-
           echo "[INFO] Unpacking $IMG"
           gzip -dc "$IMG" > openwrt.img
           sudo losetup -Pf openwrt.img
           LOOP=$(losetup -a | grep openwrt.img | cut -d: -f1)
           sudo mkdir -p /mnt/openwrt
           sudo mount ${LOOP}p1 /mnt/openwrt || sudo mount ${LOOP}p2 /mnt/openwrt
-
           echo "[INFO] Verify DTB existence"
-          if [ ! -f /mnt/openwrt/dtb/rockchip/rk3399-bozz-sw799.dtb ]; then
-            echo "[FATAL] DTB rk3399-bozz-sw799.dtb not found"
-            exit 1
-          fi
-
+          test -f /mnt/openwrt/dtb/rockchip/rk3399-bozz-sw799.dtb
           echo "[INFO] Patch armbianEnv.txt if exists"
           if [ -f /mnt/openwrt/armbianEnv.txt ]; then
             sudo sed -i 's/^fdtfile=.*/fdtfile=rk3399-bozz-sw799.dtb/' /mnt/openwrt/armbianEnv.txt
           fi
-
           echo "[INFO] Patch extlinux.conf if exists"
           if [ -f /mnt/openwrt/extlinux/extlinux.conf ]; then
             sudo sed -i 's|FDT .*|FDT /dtb/rockchip/rk3399-bozz-sw799.dtb|' /mnt/openwrt/extlinux/extlinux.conf
           fi
-
           sync
           sudo umount /mnt/openwrt
           sudo losetup -d $LOOP
-
           echo "[INFO] Repack A-Route image"
           gzip -9 openwrt.img
           mv openwrt.img.gz ${PACKAGED_OUTPUTPATH}/openwrt_zcube1-max_A-Route.img.gz
+          echo "[INFO] Finished: ${PACKAGED_OUTPUTPATH}/openwrt_zcube1-max_A-Route.img.gz"
 
       - name: Upload OpenWrt Firmware to Release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@main
         with:
           tag: OpenWrt_zcube1-max_A-Route
           artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/openwrt_zcube1-max_A-Route.img.gz
+          allowUpdates: true
           makeLatest: true

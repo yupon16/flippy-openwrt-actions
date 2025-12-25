@@ -1,5 +1,5 @@
 #==========================================================================
-# Description: Build OpenWrt for zcube1-max (A 路线, DTB=rk3399-bozz-sw799)
+# Build OpenWrt zcube1-max (A 路线，DTB=rk3399-bozz-sw799)
 #==========================================================================
 
 name: Build OpenWrt zcube1-max (A Route)
@@ -44,7 +44,7 @@ jobs:
           date
 
       # ------------------------------------------------------------
-      # 2. 下载 zcube1-max 原始 rootfs
+      # 2. 下载通用 armsr-armv8 rootfs
       # ------------------------------------------------------------
       - name: Download OpenWrt rootfs
         run: |
@@ -58,19 +58,19 @@ jobs:
           rootfs_url=$(echo "$latest_json" | jq -r '
             [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
             | .[0].assets[]
-            | select(.name | contains("armsr-armv8") and contains("zcube1-max") and endswith("-rootfs.tar.gz"))
+            | select(.name | contains("armsr-armv8") and endswith("-rootfs.tar.gz"))
             | .url
           ')
 
           rootfs_name=$(echo "$latest_json" | jq -r '
             [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))]
             | .[0].assets[]
-            | select(.name | contains("armsr-armv8") and contains("zcube1-max") and endswith("-rootfs.tar.gz"))
+            | select(.name | contains("armsr-armv8") and endswith("-rootfs.tar.gz"))
             | .name
           ')
 
           if [ -z "$rootfs_url" ]; then
-            echo "Failed to find zcube1-max armsr-armv8 rootfs asset"
+            echo "Failed to find armsr-armv8 rootfs asset"
             exit 1
           fi
 

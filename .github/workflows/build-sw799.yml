@@ -1,89 +1,133 @@
-name: Build OpenWrt SW799 (A-Route)
+name: Build OpenWrt zcube1-max A-Route
 
 on:
   workflow_dispatch:
+    inputs:
+      openwrt_kernel:
+        description: "Select kernel version"
+        required: true
+        default: "6.12.y"
+        type: choice
+        options:
+          - 5.10.y
+          - 5.15.y
+          - 6.1.y
+          - 6.6.y
+          - 6.12.y
+          - 6.1.y_6.12.y
+
+env:
+  TZ: Etc/UTC
+  PACKAGED_OUTPUTPATH: /opt/openwrt_packit/output
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
-      - name: Build OpenWrt image (flippy pack)
-        uses: ophub/flippy-openwrt-actions@main
+    # -------------------------
+    # 1. Checkout repo
+    # -------------------------
+    - name: Checkout repository
+      uses: actions/checkout@v6
 
-      - name: A-Route patch image safely
-        shell: bash
-        env:
-          PACKAGED_OUTPUTPATH: /opt/openwrt_packit/output
-        run: |
-          set -euo pipefail
+    # -------------------------
+    # 2. Initialize environment
+    # -------------------------
+    - name: Initialization environment
+      shell: bash
+      run: |
+        sudo swapoff -a || true
+        sudo apt-get update
+        sudo apt-get -y install $(curl -fsSL https://ophub.org/ubuntu2404-make-openwrt-depends)
+        sudo apt-get -y autoremove --purge
+        sudo apt-get clean
+        sudo timedatectl set-timezone "${TZ}"
+        date
 
-          echo "[INFO] Locate firmware image"
-          IMG=$(ls ${PACKAGED_OUTPUTPATH}/openwrt_*zcube1-max*.img.gz | head -n 1 || true)
+    # -------------------------
+    # 3. Download zcube1-max rootfs
+    # -------------------------
+    - name: Download OpenWrt ARMv8 rootfs
+      shell: bash
+      run: |
+        set -e
+        mkdir -p opt/download
 
-          if [ -z "${IMG:-}" ]; then
-            echo "[WARN] zcube1-max image not found, skip A-Route"
-            exit 0
-          fi
+        json=$(curl -fsSL https://api.github.com/repos/ophub/flippy-openwrt-actions/releases)
 
-          echo "[INFO] Unpacking $IMG"
-          gzip -dc "$IMG" > openwrt.img
+        url=$(echo "$json" | jq -r '
+          [.[] | select(.tag_name | contains("OpenWrt_armv8_rootfs"))][0]
+          .assets[] | select(.name | contains("zcube1-max") and endswith("-rootfs.tar.gz")) | .browser_download_url
+        ')
 
-          cleanup() {
-            set +e
-            mountpoint -q /mnt/openwrt && sudo umount /mnt/openwrt
-            [ -n "${LOOPDEV:-}" ] && sudo losetup -d "$LOOPDEV"
-          }
-          trap cleanup EXIT
+        name=$(basename "$url")
 
-          echo "[INFO] Setup loop device"
-          LOOPDEV=$(sudo losetup --show -Pf openwrt.img)
-          echo "[INFO] Loop device: $LOOPDEV"
+        if [ -z "$url" ]; then
+          echo "[FATAL] Cannot locate zcube1-max rootfs asset"
+          exit 1
+        fi
 
-          sudo mkdir -p /mnt/openwrt
+        echo "[INFO] Downloading $name"
+        curl -L "$url" -o "opt/download/$name"
 
-          echo "[INFO] Detect partition to mount"
-          for p in ${LOOPDEV}p*; do
-            if sudo mount "$p" /mnt/openwrt 2>/dev/null; then
-              echo "[INFO] Mounted $p"
-              break
-            fi
-          done
+        echo "OPENWRT_ARMSR=$PWD/opt/download/$name" >> $GITHUB_ENV
 
-          if ! mountpoint -q /mnt/openwrt; then
-            echo "[WARN] No mountable partition found, skip patch"
-            exit 0
-          fi
+    # -------------------------
+    # 4. Build OpenWrt image
+    # -------------------------
+    - name: Build OpenWrt image (flippy)
+      uses: ophub/flippy-openwrt-actions@main
+      env:
+        OPENWRT_ARMSR: ${{ env.OPENWRT_ARMSR }}
+        PACKAGE_SOC: zcube1-max
+        KERNEL_REPO_URL: breakingbadboy/OpenWrt
+        KERNEL_VERSION_NAME: ${{ github.event.inputs.openwrt_kernel }}
+        KERNEL_AUTO_LATEST: true
+        OPENWRT_IP: 192.168.1.1
+        CUSTOMIZE_RK3399: sw799:rk3399-bozz-sw799.dtb
+        SCRIPT_DIY_PATH: ""
+        WHOAMI: ophub
 
-          echo "[INFO] Search DTB"
-          DTB=$(find /mnt/openwrt -name 'rk3399-bozz-sw799*.dtb' | head -n 1 || true)
+    # -------------------------
+    # 5. Patch A-Route DTB
+    # -------------------------
+    - name: Patch A-Route DTB
+      shell: bash
+      run: |
+        set -e
+        IMG=$(ls ${PACKAGED_OUTPUTPATH}/openwrt_*zcube1-max*.img.gz | head -n1)
+        if [ -z "$IMG" ]; then
+          echo "[FATAL] zcube1-max image not found"
+          exit 1
+        fi
 
-          if [ -z "${DTB:-}" ]; then
-            echo "[WARN] DTB not found in image, skip DTB patch"
-          else
-            echo "[INFO] Found DTB: $DTB"
+        echo "[INFO] Unpacking $IMG"
+        gzip -dc "$IMG" > openwrt.img
 
-            if [ -f /mnt/openwrt/armbianEnv.txt ]; then
-              echo "[INFO] Patch armbianEnv.txt"
-              sudo sed -i \
-                "s|^fdtfile=.*|fdtfile=$(basename "$DTB")|" \
-                /mnt/openwrt/armbianEnv.txt
-            fi
+        sudo losetup -Pf openwrt.img
+        LOOP=$(losetup -a | grep openwrt.img | cut -d: -f1)
 
-            if [ -f /mnt/openwrt/extlinux/extlinux.conf ]; then
-              echo "[INFO] Patch extlinux.conf"
-              sudo sed -i \
-                "s|^ *FDT .*|  FDT ${DTB#/mnt/openwrt}|" \
-                /mnt/openwrt/extlinux/extlinux.conf
-            fi
-          fi
+        sudo mkdir -p /mnt/openwrt
+        sudo mount ${LOOP}p1 /mnt/openwrt || sudo mount ${LOOP}p2 /mnt/openwrt
 
-          sync
-          echo "[INFO] Repack image"
-          gzip -9 openwrt.img
-          mv openwrt.img.gz \
-            ${PACKAGED_OUTPUTPATH}/openwrt_zcube1-max_A-Route.img.gz
+        echo "[INFO] Verify DTB existence"
+        test -f /mnt/openwrt/dtb/rockchip/rk3399-bozz-sw799.dtb
 
-          echo "[INFO] A-Route completed successfully"
+        echo "[INFO] Patch armbianEnv.txt if exists"
+        if [ -f /mnt/openwrt/armbianEnv.txt ]; then
+          sudo sed -i 's/^fdtfile=.*/fdtfile=rk3399-bozz-sw799.dtb/' /mnt/openwrt/armbianEnv.txt
+        fi
+
+        echo "[INFO] Patch extlinux.conf if exists"
+        if [ -f /mnt/openwrt/extlinux/extlinux.conf ]; then
+          sudo sed -i 's|FDT .*|FDT /dtb/rockchip/rk3399-bozz-sw799.dtb|' /mnt/openwrt/extlinux/extlinux.conf
+        fi
+
+        sync
+        sudo umount /mnt/openwrt
+        sudo losetup -d $LOOP
+
+        echo "[INFO] Repack A-Route image"
+        gzip -9 openwrt.img
+        mv openwrt.img.gz ${PACKAGED_OUTPUTPATH}/openwrt_zcube1-max_A-Route.img.gz

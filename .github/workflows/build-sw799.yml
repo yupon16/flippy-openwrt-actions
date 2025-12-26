@@ -32,23 +32,16 @@ on:
       openwrt_kernel:
         description: "Select kernel version"
         required: false
-        default: "6.1.y_6.12.y"
+        default: "6.12.y"
         type: choice
         options:
-          - 5.10.y
-          - 5.15.y
           - 6.1.y
           - 6.6.y
           - 6.12.y
-          - 5.10.y_5.15.y
-          - 5.15.y_6.1.y
-          - 6.1.y_6.12.y
-          - 6.1.y_6.6.y
-          - 6.6.y_6.12.y
       auto_kernel:
         description: "Auto use the latest kernel"
         required: false
-        default: true
+        default: false
         type: boolean
       openwrt_storage:
         description: "Select image storage type."
@@ -178,7 +171,7 @@ jobs:
           KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
           KERNEL_AUTO_LATEST: ${{ inputs.auto_kernel }}
           OPENWRT_IP: ${{ inputs.openwrt_ip }}
-          CUSTOMIZE_RK3399: "sw799:rk3399-bozz-sw799.dtb"
+          CUSTOMIZE_RK3399: "sw799:rockchip/rk3399-bozz-sw799.dtb"  # 修正：添加完整路径
           WHOAMI: ${{ inputs.builder_name }}
 
       - name: Verify and Ensure SW799 DTB Configuration
@@ -194,7 +187,6 @@ jobs:
           # 首先查找sw799固件
           IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*sw799*.img.gz 2>/dev/null | head -n1)
           
-          # 如果没有找到sw799固件，查找其他rk3399固件
           if [ -z "$IMG_GZ" ]; then
             echo "未找到sw799固件，查找其他rk3399固件..."
             IMG_GZ=$(ls "${PACKAGED_OUTPUTPATH}"/*rk3399*.img.gz 2>/dev/null | head -n1)
@@ -232,16 +224,22 @@ jobs:
             sudo ls /tmp/boot/dtb/rockchip/*rk3399*.dtb 2>/dev/null || echo "无rk3399 DTB文件"
           fi
           
-          # 强制设置fdtfile为rk3399-bozz-sw799.dtb
-          echo "设置fdtfile为rk3399-bozz-sw799.dtb..."
-          sudo sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3399-bozz-sw799.dtb|' /tmp/boot/armbianEnv.txt
+          # 验证fdtfile配置（不应该修改，因为打包阶段已设置正确）
+          echo "检查当前fdtfile配置..."
+          CURRENT_FDTFILE=$(sudo grep 'fdtfile=' /tmp/boot/armbianEnv.txt)
+          echo "当前配置: $CURRENT_FDTFILE"
           
-          # 设置overlay_prefix为rk3399
-          echo "设置overlay_prefix..."
+          # 如果配置不正确，则修正
+          if echo "$CURRENT_FDTFILE" | grep -v "rockchip/rk3399-bozz-sw799.dtb" > /dev/null; then
+            echo "修正fdtfile配置..."
+            sudo sed -i 's|^fdtfile=.*|fdtfile=rockchip/rk3399-bozz-sw799.dtb|' /tmp/boot/armbianEnv.txt
+          fi
+          
+          # 确保overlay_prefix为rk3399
           sudo sed -i 's|^overlay_prefix=.*|overlay_prefix=rk3399|' /tmp/boot/armbianEnv.txt || true
           
-          # 验证配置
-          echo "验证配置:"
+          # 验证最终配置
+          echo "最终配置:"
           sudo grep -E 'fdtfile|overlay_prefix' /tmp/boot/armbianEnv.txt
           
           # 卸载并重新压缩
@@ -274,11 +272,12 @@ jobs:
             - **默认IP**: ${{ inputs.openwrt_ip }}
             - **用户名**: root
             - **密码**: password
-            - **内核版本**: 根据选择的版本自动构建
-            - **DTB配置**: rk3399-bozz-sw799.dtb (强制设置)
+            - **内核版本**: ${{ inputs.openwrt_kernel }}
+            - **DTB配置**: rockchip/rk3399-bozz-sw799.dtb
             
             #### 已验证的组合
             - ✅ rk3399-bozz-sw799.dtb + 6.12.62-flippy-94+ 内核
+            - ✅ rk3399-bozz-sw799.dtb + 6.6.119-flippy-94+ 内核
             
             #### 安装说明
             1. 将固件写入SD卡或U盘

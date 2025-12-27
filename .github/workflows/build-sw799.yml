@@ -167,11 +167,11 @@ jobs:
         env:
           OPENWRT_ARMSR: opt/download/*rootfs.tar.gz
           PACKAGE_SOC: ${{ inputs.openwrt_soc }}
-          KERNEL_REPO_URL: ${{ inputs.kernel_repo }}
-          KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
-          KERNEL_AUTO_LATEST: ${{ inputs.auto_kernel }}
+          KERNEL_REPO_URL: breakingbadboy/OpenWrt    # 修改此处
+          KERNEL_VERSION_NAME: 6.12.y                 # 修改此处
+          KERNEL_AUTO_LATEST: false                   # 修改此处
           OPENWRT_IP: ${{ inputs.openwrt_ip }}
-          CUSTOMIZE_RK3399: "sw799:rockchip/rk3399-bozz-sw799.dtb"  # 修正：添加完整路径
+          CUSTOMIZE_RK3399: "sw799:rockchip/rk3399-bozz-sw799.dtb"
           WHOAMI: ${{ inputs.builder_name }}
 
       - name: Verify and Ensure SW799 DTB Configuration
